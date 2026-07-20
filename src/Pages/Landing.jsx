@@ -1,59 +1,50 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { LibraryBig, ArrowRight } from "lucide-react";
-import LandingBg from "../assets/Landing-bg.jpg";
+import landingBg from "../assets/landing-bg.jpg";
 
 /**
- * Landing.jsx
- * Standalone entry page with a full-bleed background photo and a top nav
- * bar of Home / Support / Login / Signup buttons.
- *
- * Props:
- *  - onHome()     -> called when "Home" is clicked
- *  - onSupport()  -> called when "Support" is clicked
- *  - onLogin()    -> called when "Login" is clicked
- *  - onSignup()   -> called when "Signup" is clicked
+ * Landing.jsx — now navigates via react-router-dom instead of callback props.
+ * Route it at "/" in App.jsx.
  */
-export default function Landing({
-  onHome = () => {},
-  onSupport = () => {},
-  onLogin = () => {},
-  onSignup = () => {},
-}) {
+export default function Landing() {
+  const navigate = useNavigate();
+
   return (
-    <div className="Landing-root">
+    <div className="landing-root">
       <GlobalStyle />
 
-      <div className="Landing-hero" style={{ backgroundImage: `url(${LandingBg})` }}>
-        <div className="Landing-scrim" />
+      <div className="landing-hero" style={{ backgroundImage: `url(${landingBg})` }}>
+        <div className="landing-scrim" />
 
-        <header className="Landing-nav">
-          <div className="Landing-brand">
-            <div className="Landing-brand-mark"><LibraryBig size={20} /></div>
+        <header className="landing-nav">
+          <div className="landing-brand">
+            <div className="brand-mark"><LibraryBig size={20} /></div>
             <span>Shelfwise</span>
           </div>
 
-          <nav className="Landing-nav-buttons">
-            <button className="nav-btn" onClick={onHome}>Home</button>
-            <button className="nav-btn" onClick={onSupport}>Support</button>
-            <button className="nav-btn" onClick={onLogin}>Login</button>
-            <button className="nav-btn primary" onClick={onSignup}>
+          <nav className="landing-nav-buttons">
+            <button className="nav-btn" onClick={() => navigate("/")}>Home</button>
+            <button className="nav-btn" onClick={() => navigate("/support")}>Support</button>
+            <button className="nav-btn" onClick={() => navigate("/login")}>Login</button>
+            <button className="nav-btn primary" onClick={() => navigate("/signup")}>
               Signup <ArrowRight size={14} />
             </button>
           </nav>
         </header>
 
-        <div className="Landing-content">
-          <span className="Landing-eyebrow">Your library, organized</span>
+        <div className="landing-content">
+          <span className="landing-eyebrow">Your library, organized</span>
           <h1>Every shelf, every reader,<br />one due date at a time.</h1>
           <p>
             Browse the full catalog, track what you've borrowed, and never miss a return —
             or, if you run the desk, keep every shelf and every reader in view.
           </p>
-          <div className="Landing-cta">
-            <button className="nav-btn primary lg" onClick={onSignup}>
+          <div className="landing-cta">
+            <button className="nav-btn primary lg" onClick={() => navigate("/signup")}>
               Get started <ArrowRight size={16} />
             </button>
-            <button className="nav-btn ghost lg" onClick={onLogin}>
+            <button className="nav-btn ghost lg" onClick={() => navigate("/login")}>
               I already have an account
             </button>
           </div>
@@ -68,7 +59,7 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Source+Serif+4:wght@400;500;600&display=swap');
 
-      .Landing-root {
+      .landing-root {
         --ink-light: #F2ECD9;
         --forest: #1F3B30;
         --forest-deep: #142A22;
@@ -78,11 +69,11 @@ function GlobalStyle() {
         font-family: 'Source Serif 4', Georgia, serif;
         width: 100%;
       }
-      .Landing-root *, .Landing-root *::before, .Landing-root *::after { box-sizing: border-box; }
-      .Landing-root h1 { font-family: 'Fraunces', serif; margin: 0; }
-      .Landing-root button { font-family: inherit; cursor: pointer; }
+      .landing-root *, .landing-root *::before, .landing-root *::after { box-sizing: border-box; }
+      .landing-root h1 { font-family: 'Fraunces', serif; margin: 0; }
+      .landing-root button { font-family: inherit; cursor: pointer; }
 
-      .Landing-hero {
+      .landing-hero {
         position: relative;
         min-height: 100vh;
         background-size: cover;
@@ -90,26 +81,25 @@ function GlobalStyle() {
         display: flex;
         flex-direction: column;
       }
-      .Landing-scrim {
+      .landing-scrim {
         position: absolute; inset: 0;
         background: linear-gradient(180deg, rgba(20,42,34,0.88) 0%, rgba(20,42,34,0.55) 28%, rgba(20,42,34,0.35) 55%, rgba(20,42,34,0.65) 100%);
       }
 
-      /* ---- TOP NAV ---- */
-      .Landing-nav {
+      .landing-nav {
         position: relative; z-index: 1;
         display: flex; align-items: center; justify-content: space-between;
         padding: 22px 40px; gap: 20px; flex-wrap: wrap;
       }
-      .Landing-brand {
+      .landing-brand {
         display: flex; align-items: center; gap: 9px; color: var(--ink-light);
         font-family: 'Fraunces', serif; font-weight: 600; font-size: 18px;
       }
-      .Landing-brand-mark {
+      .brand-mark {
         width: 32px; height: 32px; border-radius: 3px; background: var(--brass); color: var(--forest-deep);
         display: flex; align-items: center; justify-content: center; flex-shrink: 0;
       }
-      .Landing-nav-buttons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .landing-nav-buttons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
       .nav-btn {
         background: transparent; border: 1px solid rgba(242,236,217,0.35); color: var(--ink-light);
@@ -124,27 +114,26 @@ function GlobalStyle() {
       .nav-btn.ghost { border-color: rgba(242,236,217,0.5); }
       .nav-btn.lg { padding: 13px 22px; font-size: 15px; }
 
-      /* ---- HERO CONTENT ---- */
-      .Landing-content {
+      .landing-content {
         position: relative; z-index: 1;
         flex: 1; display: flex; flex-direction: column; justify-content: center;
         max-width: 640px; padding: 40px 40px 100px;
         color: var(--ink-light);
       }
-      .Landing-eyebrow {
+      .landing-eyebrow {
         display: inline-block; font-family: 'IBM Plex Mono', monospace, monospace;
         font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brass-light);
         border: 1px solid rgba(224,184,118,0.5); padding: 5px 11px; border-radius: 999px;
         margin-bottom: 18px; width: fit-content;
       }
-      .Landing-content h1 { color: #FBF7EC; font-size: 44px; line-height: 1.2; font-weight: 600; margin-bottom: 16px; }
-      .Landing-content p { color: #D6DBC4; font-size: 16px; line-height: 1.65; max-width: 46ch; margin-bottom: 30px; }
-      .Landing-cta { display: flex; gap: 14px; flex-wrap: wrap; }
+      .landing-content h1 { color: #FBF7EC; font-size: 44px; line-height: 1.2; font-weight: 600; margin-bottom: 16px; }
+      .landing-content p { color: #D6DBC4; font-size: 16px; line-height: 1.65; max-width: 46ch; margin-bottom: 30px; }
+      .landing-cta { display: flex; gap: 14px; flex-wrap: wrap; }
 
       @media (max-width: 680px) {
-        .Landing-content h1 { font-size: 32px; }
-        .Landing-nav { padding: 18px 22px; }
-        .Landing-content { padding: 30px 22px 70px; }
+        .landing-content h1 { font-size: 32px; }
+        .landing-nav { padding: 18px 22px; }
+        .landing-content { padding: 30px 22px 70px; }
       }
     `}</style>
   );

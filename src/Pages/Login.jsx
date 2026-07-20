@@ -1,32 +1,39 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { LibraryBig, User, UserCog, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
+import { DUMMY_USERS } from "./Dummydata";
 
 /**
- * Login.jsx
- * Standalone login page (separate from signup).
+ * Login.jsx — navigation is now internal via react-router-dom.
+ * Route it at "/login" in App.jsx.
  *
  * Props:
- *  - onLoginSuccess(session)  -> called with { role: 'user' | 'librarian', user: {...} }
- *                                once the form is submitted. Wire this to hand off
- *                                into LibraryApp via its `initialSession` prop.
- *  - onSwitchToSignup()       -> called when the user clicks "Create one"
- *  - onBack()                 -> called when the user clicks the back link (e.g. to Landing)
+ *  - onLoginSuccess(session) -> still passed in from App.jsx, since App owns
+ *    the session state that decides whether "/dashboard" is accessible.
  */
-export default function Login({
-  onLoginSuccess = () => {},
-  onSwitchToSignup = () => {},
-  onBack = () => {},
-}) {
+export default function Login({ onLoginSuccess = () => {} }) {
+  const navigate = useNavigate();
   const [role, setRole] = useState("user"); // user | librarian
   const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
 
   function submit(e) {
     e.preventDefault();
-    const demoUser =
-      role === "user"
-        ? { id: "u1", name: "Aditi Sharma", email: form.email || "aditi@mail.com" }
-        : { id: "lib1", name: "Mr. Deshpande", email: form.email || "librarian@shelfwise.in" };
-    onLoginSuccess({ role, user: demoUser });
+    const match = DUMMY_USERS.find(
+      (u) =>
+        u.role === role &&
+        u.email.toLowerCase() === form.email.trim().toLowerCase() &&
+        u.password === form.password
+    );
+
+    if (!match) {
+      setError("No account matches that email, password, and role. Try one of the demo logins below.");
+      return;
+    }
+
+    setError("");
+    onLoginSuccess({ role: match.role, user: { id: match.id, name: match.name, email: match.email } });
+    navigate("/dashboard");
   }
 
   return (
@@ -34,7 +41,7 @@ export default function Login({
       <GlobalStyle />
 
       <div className="login-wrap">
-        <button className="back-link" onClick={onBack}>
+        <button className="back-link" onClick={() => navigate("/")}>
           <ArrowLeft size={15} /> Back
         </button>
 
@@ -96,11 +103,19 @@ export default function Login({
               Log in as {role === "user" ? "Reader" : "Librarian"}
               <ArrowRight size={16} />
             </button>
+
+            {error && <p className="error-line">{error}</p>}
           </form>
+
+          <div className="demo-hint">
+            <p className="demo-title">Demo logins</p>
+            <p>Reader: aditi@mail.com / password123</p>
+            <p>Librarian: librarian@shelfwise.in / admin123</p>
+          </div>
 
           <p className="switch-line">
             New here?{" "}
-            <button className="link" onClick={onSwitchToSignup}>
+            <button className="link" onClick={() => navigate("/signup")}>
               Create an account
             </button>
           </p>
@@ -192,6 +207,17 @@ function GlobalStyle() {
 
       .switch-line { margin-top: 22px; font-size: 13.5px; color: var(--ink-soft); text-align: center; }
       .link { background: none; border: none; color: var(--brass); font-weight: 600; text-decoration: underline; padding: 0; }
+
+      .error-line {
+        margin: 4px 0 0; font-size: 13px; color: #9C3B2E; background: #F1DAD3;
+        border-radius: 3px; padding: 9px 12px;
+      }
+      .demo-hint {
+        margin-top: 18px; padding: 12px 14px; background: var(--parchment-deep);
+        border-radius: 4px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.6;
+      }
+      .demo-title { font-weight: 700; color: var(--forest-deep); margin: 0 0 2px; }
+      .demo-hint p { margin: 0; }
     `}</style>
   );
 }
