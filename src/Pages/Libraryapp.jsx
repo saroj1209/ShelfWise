@@ -4,7 +4,7 @@ import {
   Trash2, CheckCircle2, AlertTriangle, Clock3, X, Mail, Lock,
   ArrowRight, ArrowLeft, UserCog, ClipboardList, Filter
 } from "lucide-react";
-import { DUMMY_BOOKS, DUMMY_BORROWERS } from "./Dummydata";
+import { DUMMY_BOOKS, DUMMY_BORROWERS, AUTHOR_BIOS } from "./dummyData";
 
 /* ---------------------------------------------------------
    MOCK DATA — replace with real API calls later
@@ -250,6 +250,7 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
   const [tab, setTab] = useState("browse");
   const [query, setQuery] = useState("");
   const [genre, setGenre] = useState("All");
+  const [selectedBook, setSelectedBook] = useState(null);
 
   const myRecords = useMemo(() => {
     const me = borrowers.find((b) => b.id === currentUser.id) || borrowers[0];
@@ -314,7 +315,7 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
 
             <div className="book-grid">
               {filteredBooks.map((b) => (
-                <BookCard key={b.id} book={b} />
+                <BookCard key={b.id} book={b} onSelect={() => setSelectedBook(b)} />
               ))}
               {filteredBooks.length === 0 && (
                 <EmptyState text="No titles match that search. Try a different keyword or genre." />
@@ -351,14 +352,23 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
           </>
         )}
       </main>
+
+      {selectedBook && (
+        <BookDetailModal
+          book={selectedBook}
+          allBooks={books}
+          onClose={() => setSelectedBook(null)}
+          onSelectBook={(b) => setSelectedBook(b)}
+        />
+      )}
     </div>
   );
 }
 
-function BookCard({ book }) {
+function BookCard({ book, onSelect }) {
   const isAvailable = book.available > 0;
   return (
-    <div className="book-card">
+    <div className="book-card" onClick={onSelect} role="button" tabIndex={0}>
       <div className="book-spine" aria-hidden="true">
         <span>{book.genre}</span>
       </div>
@@ -371,9 +381,71 @@ function BookCard({ book }) {
             {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
             {isAvailable ? `${book.available} available` : "All copies out"}
           </span>
-          <button className="btn-small" disabled={!isAvailable}>
+          <button
+            className="btn-small"
+            disabled={!isAvailable}
+            onClick={(e) => e.stopPropagation()}
+          >
             {isAvailable ? "Borrow" : "Join waitlist"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookDetailModal({ book, allBooks, onClose, onSelectBook }) {
+  const bio = AUTHOR_BIOS[book.author];
+  const moreByAuthor = allBooks.filter((b) => b.author === book.author && b.id !== book.id);
+  const isAvailable = book.available > 0;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal book-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{book.title}</h3>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="book-modal-body">
+          <div className="book-modal-top">
+            <span className="tag">{book.genre}</span>
+            <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
+              {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+              {isAvailable ? `${book.available} available` : "All copies out"}
+            </span>
+          </div>
+
+          <p className="book-modal-author">by {book.author}</p>
+          <p className="book-modal-isbn">ISBN {book.isbn}</p>
+
+          <p className="book-modal-desc">{book.description || "No description available for this title yet."}</p>
+
+          <button className="btn-small modal-borrow" disabled={!isAvailable}>
+            {isAvailable ? "Borrow this book" : "Join waitlist"}
+          </button>
+
+          <div className="author-section">
+            <h4>About the author</h4>
+            <p className="author-bio">{bio || `No profile available yet for ${book.author}.`}</p>
+          </div>
+
+          {moreByAuthor.length > 0 && (
+            <div className="author-section">
+              <h4>More by {book.author}</h4>
+              <div className="more-books-list">
+                {moreByAuthor.map((b) => (
+                  <button key={b.id} className="more-book-row" onClick={() => onSelectBook(b)}>
+                    <span className="more-book-title">{b.title}</span>
+                    <span className={`avail-badge sm ${b.available > 0 ? "yes" : "no"}`}>
+                      {b.available > 0 ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
+                      {b.available > 0 ? `${b.available} available` : "Out"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -429,12 +501,24 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
   const [tab, setTab] = useState("books");
   const [filter, setFilter] = useState("all"); // all | overdue
   const [showAdd, setShowAdd] = useState(false);
+  const [bookQuery, setBookQuery] = useState("");
 
   const allRecordsFlat = borrowers.flatMap((b) =>
     b.records.map((r) => ({ ...r, borrowerName: b.name, borrowerEmail: b.email, status: recordStatus(r) }))
   );
   const visibleRecords = filter === "overdue" ? allRecordsFlat.filter((r) => r.status === "overdue") : allRecordsFlat;
   const overdueTotal = allRecordsFlat.filter((r) => r.status === "overdue").length;
+
+  const visibleBooks = books.filter((b) => {
+    const q = bookQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      b.title.toLowerCase().includes(q) ||
+      b.author.toLowerCase().includes(q) ||
+      b.genre.toLowerCase().includes(q) ||
+      b.isbn.toLowerCase().includes(q)
+    );
+  });
 
   function toggleAvailability(id) {
     setBooks((prev) =>
@@ -468,11 +552,20 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
             <div className="section-head row">
               <div>
                 <h2>Manage the catalog</h2>
-                <p>{books.length} titles on record</p>
+                <p>{visibleBooks.length} of {books.length} titles shown</p>
               </div>
               <button className="btn-primary" onClick={() => setShowAdd(true)}>
                 <Plus size={16} /> Add book
               </button>
+            </div>
+
+            <div className="search-box lib-search">
+              <Search size={16} />
+              <input
+                placeholder="Search by title, author, genre, or ISBN…"
+                value={bookQuery}
+                onChange={(e) => setBookQuery(e.target.value)}
+              />
             </div>
 
             <div className="table-card">
@@ -488,7 +581,7 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {books.map((b) => (
+                  {visibleBooks.map((b) => (
                     <tr key={b.id}>
                       <td className="strong">{b.title}</td>
                       <td>{b.author}</td>
@@ -510,6 +603,9 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
                       </td>
                     </tr>
                   ))}
+                  {visibleBooks.length === 0 && (
+                    <tr><td colSpan={6}><EmptyState text="No titles match that search." /></td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -836,6 +932,7 @@ function GlobalStyle() {
         display: flex; align-items: center; gap: 10px; background: var(--card);
         border: 1px solid var(--line); border-radius: 3px; padding: 10px 14px; max-width: 420px; color: var(--ink-soft);
       }
+      .search-box.lib-search { margin-bottom: 18px; }
       .search-box input { border: none; outline: none; background: transparent; width: 100%; font-size: 14px; color: var(--ink); }
       .genre-pills { display: flex; gap: 8px; flex-wrap: wrap; }
       .pill {
@@ -849,6 +946,7 @@ function GlobalStyle() {
       .book-card {
         background: var(--card); border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
         display: flex; flex-direction: column; transition: transform .15s ease, box-shadow .15s ease;
+        cursor: pointer;
       }
       .book-card:hover { transform: translateY(-3px); box-shadow: 0 14px 26px -18px rgba(20,42,34,0.45); }
       .book-spine {
@@ -925,6 +1023,25 @@ function GlobalStyle() {
         align-items: center; justify-content: center; padding: 20px; z-index: 50;
       }
       .modal { background: var(--card); border-radius: 5px; padding: 26px; width: 100%; max-width: 420px; border: 1px solid var(--line); }
+      .modal.book-modal { max-width: 480px; max-height: 85vh; overflow-y: auto; }
+      .book-modal-body { display: flex; flex-direction: column; gap: 10px; }
+      .book-modal-top { display: flex; align-items: center; gap: 8px; }
+      .book-modal-author { font-size: 14.5px; color: var(--forest-deep); font-weight: 600; margin: 4px 0 0; }
+      .book-modal-isbn { font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: var(--ink-soft); opacity: 0.8; margin: 0; }
+      .book-modal-desc { font-size: 14px; line-height: 1.65; color: var(--ink); margin: 8px 0 4px; }
+      .modal-borrow { align-self: flex-start; padding: 9px 16px; margin-bottom: 6px; }
+      .author-section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 6px; }
+      .author-section h4 { font-size: 13.5px; color: var(--forest-deep); margin-bottom: 8px; }
+      .author-bio { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin: 0; }
+      .more-books-list { display: flex; flex-direction: column; gap: 6px; }
+      .more-book-row {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        background: var(--parchment-deep); border: none; border-radius: 3px; padding: 9px 12px;
+        font-size: 13.5px; color: var(--ink); text-align: left;
+      }
+      .more-book-row:hover { background: var(--line); }
+      .more-book-title { font-weight: 600; }
+      .avail-badge.sm { font-size: 11px; padding: 3px 7px; }
       .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
       .modal-head h3 { font-size: 18px; }
 

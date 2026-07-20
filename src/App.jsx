@@ -1,20 +1,22 @@
 import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Landing from "./Pages/Landing.jsx";
-import Login from "./Pages/Login.jsx";
-import LibraryApp from "./Pages/Libraryapp.jsx";
+import Landing from "./Pages/Landing";
+import Login from "./Pages/Login";
+import Signup from "./Pages/Signup";
+import ForgotPassword from "./Pages/ForgotPassword";
+import LibraryApp from "./Pages/LibraryApp";
 import "./App.css";
 
 /**
- * App.jsx — now using react-router-dom instead of manual screen-state switching.
+ * App.jsx — routes via react-router-dom.
  *
  * Routes:
- *   "/"          -> Landing
- *   "/login"     -> Login (on success, lifts session into App state, then
- *                   redirects to "/dashboard")
- *   "/signup"    -> reuses LibraryApp's own auth screen (its signup tab) for now
- *   "/dashboard" -> LibraryApp, but only reachable once `session` is set —
- *                   otherwise redirects back to "/login"
+ *   "/"                -> Landing
+ *   "/login"            -> Login (on success, lifts session into App state)
+ *   "/signup"           -> Signup (creates a demo account, then logs it in)
+ *   "/forgot-password"  -> ForgotPassword (static/demo flow, no real email sent)
+ *   "/dashboard"        -> LibraryApp, only reachable once `session` is set —
+ *                          otherwise redirects back to "/login"
  */
 function App() {
   const [session, setSession] = useState(null);
@@ -24,7 +26,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login onLoginSuccess={setSession} />} />
-        <Route path="/signup" element={<LibraryApp />} />
+        <Route path="/signup" element={<Signup onSignupSuccess={setSession} />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route
           path="/dashboard"
           element={

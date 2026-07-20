@@ -1,58 +1,71 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LibraryBig, User, UserCog, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
-import { DUMMY_USERS } from "./dummyData";
+import { registerUser, emailExists } from "./dummyData";
 
 /**
- * Login.jsx — navigation is now internal via react-router-dom.
- * Route it at "/login" in App.jsx.
+ * Signup.jsx
+ * Standalone signup page. Route it at "/signup" in App.jsx.
  *
  * Props:
- *  - onLoginSuccess(session) -> still passed in from App.jsx, since App owns
- *    the session state that decides whether "/dashboard" is accessible.
+ *  - onSignupSuccess(session) -> called with { role, user } once the account
+ *    is created, so App.jsx can lift the session and unlock "/dashboard".
  */
-export default function Login({ onLoginSuccess = () => {} }) {
+export default function Signup({ onSignupSuccess = () => {} }) {
   const navigate = useNavigate();
   const [role, setRole] = useState("user"); // user | librarian
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [error, setError] = useState("");
 
   function submit(e) {
     e.preventDefault();
-    const match = DUMMY_USERS.find(
-      (u) =>
-        u.role === role &&
-        u.email.toLowerCase() === form.email.trim().toLowerCase() &&
-        u.password === form.password
-    );
 
-    if (!match) {
-      setError("No account matches that email, password, and role. Try one of the demo logins below.");
+    if (!form.name.trim() || !form.email.trim() || !form.password) {
+      setError("Please fill in your name, email, and password.");
+      return;
+    }
+    if (form.password.length < 6) {
+      setError("Password should be at least 6 characters.");
+      return;
+    }
+    if (form.password !== form.confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+    if (emailExists(form.email)) {
+      setError("An account with that email already exists — try logging in instead.");
       return;
     }
 
+    const newUser = registerUser({
+      name: form.name.trim(),
+      email: form.email.trim(),
+      password: form.password,
+      role,
+    });
+
     setError("");
-    onLoginSuccess({ role: match.role, user: { id: match.id, name: match.name, email: match.email } });
+    onSignupSuccess({ role: newUser.role, user: { id: newUser.id, name: newUser.name, email: newUser.email } });
     navigate("/dashboard");
   }
 
   return (
-    <div className="login-root">
+    <div className="signup-root">
       <GlobalStyle />
 
-      <div className="login-wrap">
+      <div className="signup-wrap">
         <button className="back-link" onClick={() => navigate("/")}>
           <ArrowLeft size={15} /> Back
         </button>
 
-        <div className="login-card">
-          <div className="login-brand">
+        <div className="signup-card">
+          <div className="signup-brand">
             <div className="brand-mark"><LibraryBig size={20} /></div>
             <span>Shelfwise</span>
           </div>
 
-          <h1>Welcome back</h1>
-          <p className="sub">Log in to pick up right where you left off.</p>
+          <h1>Create your account</h1>
+          <p className="sub">Join as a reader to start borrowing, or as a librarian to manage the shelf.</p>
 
           <div className="role-toggle" role="tablist" aria-label="Choose role">
             <button
@@ -60,6 +73,7 @@ export default function Login({ onLoginSuccess = () => {} }) {
               aria-selected={role === "user"}
               className={role === "user" ? "active" : ""}
               onClick={() => setRole("user")}
+              type="button"
             >
               <User size={16} /> Reader
             </button>
@@ -68,12 +82,25 @@ export default function Login({ onLoginSuccess = () => {} }) {
               aria-selected={role === "librarian"}
               className={role === "librarian" ? "active" : ""}
               onClick={() => setRole("librarian")}
+              type="button"
             >
               <UserCog size={16} /> Librarian
             </button>
           </div>
 
-          <form onSubmit={submit} className="login-form">
+          <form onSubmit={submit} className="signup-form">
+            <label className="field">
+              <span>Full name</span>
+              <div className="input-wrap">
+                <User size={15} />
+                <input
+                  type="text"
+                  placeholder="e.g. Aditi Sharma"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+            </label>
             <label className="field">
               <span>Email</span>
               <div className="input-wrap">
@@ -92,34 +119,41 @@ export default function Login({ onLoginSuccess = () => {} }) {
                 <Lock size={15} />
                 <input
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="At least 6 characters"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                 />
               </div>
-              <button type="button" className="forgot-link" onClick={() => navigate("/forgot-password")}>
-                Forgot password?
-              </button>
+            </label>
+            <label className="field">
+              <span>Confirm password</span>
+              <div className="input-wrap">
+                <Lock size={15} />
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={form.confirm}
+                  onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+                />
+              </div>
             </label>
 
-            <button type="submit" className="btn-primary full">
-              Log in as {role === "user" ? "Reader" : "Librarian"}
-              <ArrowRight size={16} />
-            </button>
+            {role === "librarian" && (
+              <p className="hint">New librarian accounts are reviewed before shelf-management access is granted.</p>
+            )}
 
             {error && <p className="error-line">{error}</p>}
+
+            <button type="submit" className="btn-primary full">
+              Create account as {role === "user" ? "Reader" : "Librarian"}
+              <ArrowRight size={16} />
+            </button>
           </form>
 
-          <div className="demo-hint">
-            <p className="demo-title">Demo logins</p>
-            <p>Reader: aditi@mail.com / password123</p>
-            <p>Librarian: librarian@shelfwise.in / admin123</p>
-          </div>
-
           <p className="switch-line">
-            New here?{" "}
-            <button className="link" onClick={() => navigate("/signup")}>
-              Create an account
+            Already have an account?{" "}
+            <button className="link" onClick={() => navigate("/login")}>
+              Log in instead
             </button>
           </p>
         </div>
@@ -133,7 +167,7 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Source+Serif+4:wght@400;500;600&display=swap');
 
-      .login-root {
+      .signup-root {
         --ink: #262819;
         --ink-soft: #5B5D48;
         --parchment: #EFE8D3;
@@ -153,22 +187,22 @@ function GlobalStyle() {
         align-items: center;
         justify-content: center;
       }
-      .login-root *, .login-root *::before, .login-root *::after { box-sizing: border-box; }
-      .login-root h1 { font-family: 'Fraunces', serif; color: var(--forest-deep); margin: 0; }
-      .login-root button { font-family: inherit; cursor: pointer; }
+      .signup-root *, .signup-root *::before, .signup-root *::after { box-sizing: border-box; }
+      .signup-root h1 { font-family: 'Fraunces', serif; color: var(--forest-deep); margin: 0; }
+      .signup-root button { font-family: inherit; cursor: pointer; }
 
-      .login-wrap { width: 100%; max-width: 420px; padding: 24px 20px; }
+      .signup-wrap { width: 100%; max-width: 440px; padding: 24px 20px; }
       .back-link {
         display: flex; align-items: center; gap: 6px; background: none; border: none;
         color: var(--ink-soft); font-size: 13.5px; margin-bottom: 16px; padding: 0;
       }
       .back-link:hover { color: var(--forest-deep); }
 
-      .login-card {
+      .signup-card {
         background: var(--card); border: 1px solid var(--line); border-radius: 5px;
         padding: 36px 32px; box-shadow: 0 24px 48px -28px rgba(20,42,34,0.35);
       }
-      .login-brand {
+      .signup-brand {
         display: flex; align-items: center; gap: 9px; font-family: 'Fraunces', serif;
         font-weight: 600; font-size: 16px; color: var(--forest-deep); margin-bottom: 22px;
       }
@@ -176,8 +210,8 @@ function GlobalStyle() {
         width: 30px; height: 30px; border-radius: 3px; background: var(--brass); color: var(--forest-deep);
         display: flex; align-items: center; justify-content: center; flex-shrink: 0;
       }
-      .login-card h1 { font-size: 24px; margin-bottom: 6px; }
-      .sub { color: var(--ink-soft); font-size: 14px; margin: 0 0 22px; }
+      .signup-card h1 { font-size: 24px; margin-bottom: 6px; }
+      .sub { color: var(--ink-soft); font-size: 14px; margin: 0 0 22px; line-height: 1.5; }
 
       .role-toggle {
         display: flex; gap: 6px; background: var(--parchment-deep);
@@ -189,7 +223,7 @@ function GlobalStyle() {
       }
       .role-toggle button.active { background: var(--forest); color: #fff; }
 
-      .login-form { display: flex; flex-direction: column; gap: 16px; }
+      .signup-form { display: flex; flex-direction: column; gap: 16px; }
       .field { display: flex; flex-direction: column; gap: 6px; }
       .field > span { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
       .input-wrap {
@@ -199,6 +233,12 @@ function GlobalStyle() {
       }
       .input-wrap:focus-within { border-color: var(--brass); box-shadow: 0 0 0 3px rgba(184,134,58,0.15); }
       .input-wrap input { border: none; outline: none; width: 100%; font-size: 14.5px; color: var(--ink); background: transparent; }
+      .hint { font-size: 12.5px; color: var(--ink-soft); margin: -6px 0 0; }
+
+      .error-line {
+        margin: -4px 0 0; font-size: 13px; color: #9C3B2E; background: #F1DAD3;
+        border-radius: 3px; padding: 9px 12px;
+      }
 
       .btn-primary {
         background: var(--forest); color: #fff; border: none; border-radius: 3px;
@@ -210,21 +250,6 @@ function GlobalStyle() {
 
       .switch-line { margin-top: 22px; font-size: 13.5px; color: var(--ink-soft); text-align: center; }
       .link { background: none; border: none; color: var(--brass); font-weight: 600; text-decoration: underline; padding: 0; }
-
-      .error-line {
-        margin: 4px 0 0; font-size: 13px; color: #9C3B2E; background: #F1DAD3;
-        border-radius: 3px; padding: 9px 12px;
-      }
-      .forgot-link {
-        align-self: flex-end; background: none; border: none; color: var(--brass);
-        font-size: 12.5px; font-weight: 600; padding: 2px 0 0; text-decoration: underline;
-      }
-      .demo-hint {
-        margin-top: 18px; padding: 12px 14px; background: var(--parchment-deep);
-        border-radius: 4px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.6;
-      }
-      .demo-title { font-weight: 700; color: var(--forest-deep); margin: 0 0 2px; }
-      .demo-hint p { margin: 0; }
     `}</style>
   );
 }
