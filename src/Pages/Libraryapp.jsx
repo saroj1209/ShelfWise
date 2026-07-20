@@ -1,23 +1,24 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
-  BookOpen, Search, LogOut, User, Users, LibraryBig, Plus, Pencil,
+  BookOpen, Search, LogOut, User, Users, LibraryBig, Plus, Minus,
   Trash2, CheckCircle2, AlertTriangle, Clock3, X, Mail, Lock,
-  ArrowRight, ArrowLeft, UserCog, ClipboardList, Filter
+  ArrowRight, ArrowLeft, UserCog, ClipboardList, Filter, Hourglass, Check, Ban
 } from "lucide-react";
-import { DUMMY_BOOKS, DUMMY_BORROWERS, AUTHOR_BIOS } from "./dummyData";
+import {
+  DUMMY_BOOKS, DUMMY_BORROWERS, AUTHOR_BIOS,
+  DUMMY_USERS, registerUser, emailExists,
+} from "./dummyData";
 
 /* ---------------------------------------------------------
-   MOCK DATA — replace with real API calls later
+   CONSTANTS / HELPERS
 --------------------------------------------------------- */
 
 const TODAY = new Date("2026-07-19");
 
 const GENRES = ["All", "Fiction", "Non-Fiction", "Sci-Fi", "Mystery", "Biography", "Fantasy"];
 
-
-/* ---------------------------------------------------------
-   HELPERS
---------------------------------------------------------- */
+/* How long a borrow request holds a copy before it auto-releases. */
+const HOLD_DURATION_MS = 24 * 60 * 60 * 1000;
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -33,6 +34,23 @@ function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
+function msLeft(requestedAt, now) {
+  return Math.max(0, requestedAt + HOLD_DURATION_MS - now);
+}
+
+function fmtCountdown(ms) {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0 && m <= 0) return "expiring";
+  if (h <= 0) return `${m}m left`;
+  return `${h}h ${m}m left`;
+}
+
+function uid(prefix) {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+}
+
 /* ---------------------------------------------------------
    ROOT APP
 --------------------------------------------------------- */
@@ -40,7 +58,107 @@ function daysBetween(a, b) {
 export default function App({ initialSession = null }) {
   const [session, setSession] = useState(initialSession); // { role: 'user'|'librarian', user: {...} }
   const [books, setBooks] = useState(DUMMY_BOOKS);
-  const [borrowers] = useState(DUMMY_BORROWERS);
+  const [borrowers, setBorrowers] = useState(DUMMY_BORROWERS);
+  const [holds, setHolds] = useState([]); // pending borrow requests awaiting librarian approval
+  const [now, setNow] = useState(Date.now());
+
+  // tick every 30s so countdowns stay fresh
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // auto-release any hold that's been sitting for 24h without approval
+  useEffect(() => {
+    const expired = holds.filter((h) => msLeft(h.requestedAt, now) === 0);
+    if (expired.length === 0) return;
+    setHolds((prev) => prev.filter((h) => msLeft(h.requestedAt, now) > 0));
+    setBooks((prev) =>
+      prev.map((b) => {
+        const releasedCount = expired.filter((h) => h.bookId === b.id).length;
+        return releasedCount > 0 ? { ...b, available: b.available + releasedCount } : b;
+      })
+    );
+  }, [now, holds]);
+
+  function requestBorrow(book, user) {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === book.id && b.available > 0 ? { ...b, available: b.available - 1 } : b))
+    );
+    setHolds((prev) => [
+      ...prev,
+      {
+        id: uid("hold"),
+        bookId: book.id,
+        bookTitle: book.title,
+        bookAuthor: book.author,
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        requestedAt: Date.now(),
+      },
+    ]);
+  }
+
+  function cancelHold(holdId) {
+    const hold = holds.find((h) => h.id === holdId);
+    if (!hold) return;
+    setHolds((prev) => prev.filter((h) => h.id !== holdId));
+    setBooks((prev) => prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b)));
+  }
+
+  function approveHold(holdId) {
+    const hold = holds.find((h) => h.id === holdId);
+    if (!hold) return;
+    setHolds((prev) => prev.filter((h) => h.id !== holdId));
+
+    const borrowedISO = TODAY.toISOString().slice(0, 10);
+    const dueDate = new Date(TODAY);
+    dueDate.setDate(dueDate.getDate() + 14);
+    const newRecord = {
+      id: uid("rec"),
+      bookId: hold.bookId,
+      title: hold.bookTitle,
+      borrowed: borrowedISO,
+      due: dueDate.toISOString().slice(0, 10),
+      returned: null,
+    };
+
+    setBorrowers((prev) => {
+      const exists = prev.some((b) => b.id === hold.userId);
+      if (exists) {
+        return prev.map((b) =>
+          b.id === hold.userId ? { ...b, records: [newRecord, ...b.records] } : b
+        );
+      }
+      return [
+        ...prev,
+        { id: hold.userId, name: hold.userName, email: hold.userEmail, records: [newRecord] },
+      ];
+    });
+    // stock was already reserved when the hold was placed, so no further
+    // subtraction here — the copy simply changes from "on hold" to "on loan".
+  }
+
+  function rejectHold(holdId) {
+    cancelHold(holdId); // same effect: release the reserved copy back to the shelf
+  }
+
+  function returnBook(record) {
+    setBorrowers((prev) =>
+      prev.map((b) => ({
+        ...b,
+        records: b.records.map((r) =>
+          r.id === record.id ? { ...r, returned: TODAY.toISOString().slice(0, 10) } : r
+        ),
+      }))
+    );
+    if (record.bookId != null) {
+      setBooks((prev) =>
+        prev.map((b) => (b.id === record.bookId ? { ...b, available: b.available + 1 } : b))
+      );
+    }
+  }
 
   return (
     <div className="lms-root">
@@ -52,14 +170,23 @@ export default function App({ initialSession = null }) {
           currentUser={session.user}
           books={books}
           borrowers={borrowers}
+          holds={holds}
+          now={now}
           onLogout={() => setSession(null)}
+          onBorrow={(book) => requestBorrow(book, session.user)}
+          onCancelHold={cancelHold}
+          onReturn={returnBook}
         />
       ) : (
         <LibrarianDashboard
           books={books}
           setBooks={setBooks}
           borrowers={borrowers}
+          holds={holds}
+          now={now}
           onLogout={() => setSession(null)}
+          onApproveHold={approveHold}
+          onRejectHold={rejectHold}
         />
       )}
     </div>
@@ -68,20 +195,40 @@ export default function App({ initialSession = null }) {
 
 /* ---------------------------------------------------------
    AUTH SCREEN (Login / Signup, role switch)
+   Validates against DUMMY_USERS from dummyData.js. If your project
+   already has separate Login.jsx / Signup.jsx pages wired into routing,
+   port this validation logic over there instead of using this screen.
 --------------------------------------------------------- */
 
 function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState("login"); // login | signup
   const [role, setRole] = useState("user"); // user | librarian
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
 
   function submit(e) {
     e.preventDefault();
-    const demoUser =
-      role === "user"
-        ? { id: "u1", name: form.name || "Aditi Sharma", email: form.email || "aditi@mail.com" }
-        : { id: "lib1", name: form.name || "Mr. Deshpande", email: form.email || "librarian@shelfwise.in" };
-    onLogin({ role, user: demoUser });
+    setError("");
+
+    if (mode === "login") {
+      const match = DUMMY_USERS.find(
+        (u) => u.email.trim().toLowerCase() === form.email.trim().toLowerCase() && u.password === form.password
+      );
+      if (!match) { setError("No account matches that email and password."); return; }
+      if (match.role !== role) {
+        setError(`That email is registered as a ${match.role === "librarian" ? "Librarian" : "Reader"} — switch tabs above and try again.`);
+        return;
+      }
+      onLogin({ role: match.role, user: { id: match.id, name: match.name, email: match.email } });
+    } else {
+      if (!form.name.trim() || !form.email.trim() || !form.password) {
+        setError("Fill in every field to create an account.");
+        return;
+      }
+      if (emailExists(form.email)) { setError("An account with that email already exists."); return; }
+      const created = registerUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role });
+      onLogin({ role: created.role, user: { id: created.id, name: created.name, email: created.email } });
+    }
   }
 
   return (
@@ -123,10 +270,10 @@ function AuthScreen({ onLogin }) {
           </div>
 
           <div className="mode-tabs">
-            <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>
+            <button className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>
               Log in
             </button>
-            <button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>
+            <button className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setError(""); }}>
               Sign up
             </button>
           </div>
@@ -175,6 +322,8 @@ function AuthScreen({ onLogin }) {
               <p className="hint">New librarian accounts are reviewed before shelf-management access is granted.</p>
             )}
 
+            {error && <p className="form-error"><AlertTriangle size={13} /> {error}</p>}
+
             <button type="submit" className="btn-primary full">
               {mode === "login" ? "Log in" : "Create account"} as {role === "user" ? "Reader" : "Librarian"}
               <ArrowRight size={16} />
@@ -183,7 +332,7 @@ function AuthScreen({ onLogin }) {
 
           <p className="switch-line">
             {mode === "login" ? "New here?" : "Already have an account?"}{" "}
-            <button className="link" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+            <button className="link" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>
               {mode === "login" ? "Create an account" : "Log in instead"}
             </button>
           </p>
@@ -226,6 +375,7 @@ function CatalogNav({ tabs, active, onChange, name, roleLabel, onLogout }) {
           >
             {t.icon}
             {t.label}
+            {t.badge > 0 && <span className="tab-badge">{t.badge}</span>}
           </button>
         ))}
       </nav>
@@ -246,16 +396,21 @@ function CatalogNav({ tabs, active, onChange, name, roleLabel, onLogout }) {
    USER DASHBOARD
 --------------------------------------------------------- */
 
-function UserDashboard({ currentUser, books, borrowers, onLogout }) {
+function UserDashboard({ currentUser, books, borrowers, holds, now, onLogout, onBorrow, onCancelHold, onReturn }) {
   const [tab, setTab] = useState("browse");
   const [query, setQuery] = useState("");
   const [genre, setGenre] = useState("All");
   const [selectedBook, setSelectedBook] = useState(null);
 
   const myRecords = useMemo(() => {
-    const me = borrowers.find((b) => b.id === currentUser.id) || borrowers[0];
-    return me.records;
+    const me = borrowers.find((b) => b.id === currentUser.id);
+    return me ? me.records : [];
   }, [borrowers, currentUser]);
+
+  const myHolds = useMemo(
+    () => holds.filter((h) => h.userId === currentUser.id),
+    [holds, currentUser]
+  );
 
   const filteredBooks = books.filter((b) => {
     const matchesQuery =
@@ -274,7 +429,12 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
       <CatalogNav
         tabs={[
           { key: "browse", label: "Browse books", icon: <BookOpen size={16} /> },
-          { key: "mine", label: "My borrowed books", icon: <ClipboardList size={16} /> },
+          {
+            key: "mine",
+            label: "My borrowed books",
+            icon: <ClipboardList size={16} />,
+            badge: myHolds.length,
+          },
         ]}
         active={tab}
         onChange={setTab}
@@ -315,7 +475,16 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
 
             <div className="book-grid">
               {filteredBooks.map((b) => (
-                <BookCard key={b.id} book={b} onSelect={() => setSelectedBook(b)} />
+                <BookCard
+                  key={b.id}
+                  book={b}
+                  onSelect={() => setSelectedBook(b)}
+                  currentUser={currentUser}
+                  holds={holds}
+                  now={now}
+                  onBorrow={onBorrow}
+                  onCancelHold={onCancelHold}
+                />
               ))}
               {filteredBooks.length === 0 && (
                 <EmptyState text="No titles match that search. Try a different keyword or genre." />
@@ -334,11 +503,22 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
               </p>
             </div>
 
+            {myHolds.length > 0 && (
+              <>
+                <h3 className="subhead">Pending requests <span className="subhead-note">awaiting librarian approval</span></h3>
+                <div className="record-list">
+                  {myHolds.map((h) => (
+                    <HoldRow key={h.id} hold={h} now={now} onCancel={() => onCancelHold(h.id)} />
+                  ))}
+                </div>
+              </>
+            )}
+
             <h3 className="subhead">Currently borrowed</h3>
             {current.length === 0 && <EmptyState text="Nothing checked out right now — browse the catalog to borrow a title." />}
             <div className="record-list">
               {current.map((r) => (
-                <RecordRow key={r.id} record={r} />
+                <RecordRow key={r.id} record={r} onReturn={() => onReturn(r)} />
               ))}
             </div>
 
@@ -359,14 +539,42 @@ function UserDashboard({ currentUser, books, borrowers, onLogout }) {
           allBooks={books}
           onClose={() => setSelectedBook(null)}
           onSelectBook={(b) => setSelectedBook(b)}
+          currentUser={currentUser}
+          holds={holds}
+          now={now}
+          onBorrow={onBorrow}
+          onCancelHold={onCancelHold}
         />
       )}
     </div>
   );
 }
 
-function BookCard({ book, onSelect }) {
+/* Pending-hold row shown to the requester, with a live countdown + cancel */
+function HoldRow({ hold, now, onCancel }) {
+  const remaining = msLeft(hold.requestedAt, now);
+  return (
+    <div className="record-row status-hold">
+      <div className="record-main">
+        <h4>{hold.bookTitle}</h4>
+        <div className="record-meta">
+          <span>Requested {new Date(hold.requestedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+          <span className="dot">·</span>
+          <span className="hold-countdown"><Hourglass size={12} /> {fmtCountdown(remaining)}</span>
+        </div>
+      </div>
+      <div className="record-side">
+        <span className="status-chip hold"><Clock3 size={13} /> Awaiting approval</span>
+        <button className="btn-small btn-cancel" onClick={onCancel}>Cancel request</button>
+      </div>
+    </div>
+  );
+}
+
+function BookCard({ book, onSelect, currentUser, holds, now, onBorrow, onCancelHold }) {
   const isAvailable = book.available > 0;
+  const myHold = holds.find((h) => h.bookId === book.id && h.userId === currentUser.id);
+
   return (
     <div className="book-card" onClick={onSelect} role="button" tabIndex={0}>
       <div className="book-spine" aria-hidden="true">
@@ -377,27 +585,42 @@ function BookCard({ book, onSelect }) {
         <p className="author">{book.author}</p>
         <p className="isbn">ISBN {book.isbn}</p>
         <div className="book-foot">
-          <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
-            {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
-            {isAvailable ? `${book.available} available` : "All copies out"}
-          </span>
-          <button
-            className="btn-small"
-            disabled={!isAvailable}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {isAvailable ? "Borrow" : "Join waitlist"}
-          </button>
+          {myHold ? (
+            <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(myHold.requestedAt, now))}</span>
+          ) : (
+            <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
+              {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+              {isAvailable ? `${book.available} available` : "All copies out"}
+            </span>
+          )}
+
+          {myHold ? (
+            <button
+              className="btn-small btn-cancel"
+              onClick={(e) => { e.stopPropagation(); onCancelHold(myHold.id); }}
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              className="btn-small"
+              disabled={!isAvailable}
+              onClick={(e) => { e.stopPropagation(); onBorrow(book); }}
+            >
+              {isAvailable ? "Borrow" : "Join waitlist"}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function BookDetailModal({ book, allBooks, onClose, onSelectBook }) {
+function BookDetailModal({ book, allBooks, onClose, onSelectBook, currentUser, holds, now, onBorrow, onCancelHold }) {
   const bio = AUTHOR_BIOS[book.author];
   const moreByAuthor = allBooks.filter((b) => b.author === book.author && b.id !== book.id);
   const isAvailable = book.available > 0;
+  const myHold = holds.find((h) => h.bookId === book.id && h.userId === currentUser.id);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -410,10 +633,14 @@ function BookDetailModal({ book, allBooks, onClose, onSelectBook }) {
         <div className="book-modal-body">
           <div className="book-modal-top">
             <span className="tag">{book.genre}</span>
-            <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
-              {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
-              {isAvailable ? `${book.available} available` : "All copies out"}
-            </span>
+            {myHold ? (
+              <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(myHold.requestedAt, now))}</span>
+            ) : (
+              <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
+                {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                {isAvailable ? `${book.available} available` : "All copies out"}
+              </span>
+            )}
           </div>
 
           <p className="book-modal-author">by {book.author}</p>
@@ -421,9 +648,15 @@ function BookDetailModal({ book, allBooks, onClose, onSelectBook }) {
 
           <p className="book-modal-desc">{book.description || "No description available for this title yet."}</p>
 
-          <button className="btn-small modal-borrow" disabled={!isAvailable}>
-            {isAvailable ? "Borrow this book" : "Join waitlist"}
-          </button>
+          {myHold ? (
+            <button className="btn-small btn-cancel modal-borrow" onClick={() => onCancelHold(myHold.id)}>
+              Cancel request
+            </button>
+          ) : (
+            <button className="btn-small modal-borrow" disabled={!isAvailable} onClick={() => onBorrow(book)}>
+              {isAvailable ? "Borrow this book" : "Join waitlist"}
+            </button>
+          )}
 
           <div className="author-section">
             <h4>About the author</h4>
@@ -452,7 +685,7 @@ function BookDetailModal({ book, allBooks, onClose, onSelectBook }) {
   );
 }
 
-function RecordRow({ record }) {
+function RecordRow({ record, onReturn }) {
   const status = recordStatus(record);
   const stampDate = new Date(record.due).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }).toUpperCase();
   return (
@@ -486,6 +719,9 @@ function RecordRow({ record }) {
                 <AlertTriangle size={13} /> {daysBetween(record.due, TODAY)} days overdue
               </span>
             )}
+            {onReturn && (
+              <button className="btn-small btn-return" onClick={onReturn}>Return</button>
+            )}
           </>
         )}
       </div>
@@ -497,8 +733,8 @@ function RecordRow({ record }) {
    LIBRARIAN DASHBOARD
 --------------------------------------------------------- */
 
-function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
-  const [tab, setTab] = useState("books");
+function LibrarianDashboard({ books, setBooks, borrowers, holds, now, onLogout, onApproveHold, onRejectHold }) {
+  const [tab, setTab] = useState("requests");
   const [filter, setFilter] = useState("all"); // all | overdue
   const [showAdd, setShowAdd] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
@@ -520,10 +756,10 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
     );
   });
 
-  function toggleAvailability(id) {
+  function adjustAvailable(id, delta) {
     setBooks((prev) =>
       prev.map((b) =>
-        b.id === id ? { ...b, available: b.available > 0 ? 0 : Math.max(1, b.total) } : b
+        b.id === id ? { ...b, available: Math.max(0, Math.min(b.total, b.available + delta)) } : b
       )
     );
   }
@@ -535,10 +771,11 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
   return (
     <div className="dash">
       <CatalogNav
-        tabs={[
-          { key: "books", label: "Manage books", icon: <BookOpen size={16} /> },
-          { key: "borrowers", label: "All borrowers", icon: <Users size={16} /> },
-        ]}
+  tabs={[
+    { key: "books", label: "Manage books", icon: <BookOpen size={16} /> },
+    { key: "borrowers", label: "All borrowers", icon: <Users size={16} /> },
+    { key: "requests", label: "Borrow requests", icon: <Hourglass size={16} />, badge: holds.length },
+  ]}
         active={tab}
         onChange={setTab}
         name="Mr. Deshpande"
@@ -547,6 +784,63 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
       />
 
       <main className="dash-body">
+        {tab === "requests" && (
+          <>
+            <div className="section-head">
+              <h2>Borrow requests</h2>
+              <p>{holds.length} pending · each hold releases automatically after 24 hours if not approved</p>
+            </div>
+
+            {holds.length === 0 ? (
+              <EmptyState text="No pending borrow requests right now." />
+            ) : (
+              <div className="table-card">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reader</th>
+                      <th>Book</th>
+                      <th>Requested</th>
+                      <th>Time left</th>
+                      <th aria-label="Actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {holds.map((h) => (
+                      <tr key={h.id}>
+                        <td>
+                          <div className="reader-cell">
+                            <span className="strong">{h.userName}</span>
+                            <span className="muted">{h.userEmail}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="strong">{h.bookTitle}</span>
+                          <span className="muted">{h.bookAuthor}</span>
+                        </td>
+                        <td className="mono">
+                          {new Date(h.requestedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td>
+                          <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(h.requestedAt, now))}</span>
+                        </td>
+                        <td className="row-actions">
+                          <button className="icon-btn approve" title="Approve request" onClick={() => onApproveHold(h.id)}>
+                            <Check size={14} />
+                          </button>
+                          <button className="icon-btn danger" title="Reject request" onClick={() => onRejectHold(h.id)}>
+                            <Ban size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
         {tab === "books" && (
           <>
             <div className="section-head row">
@@ -586,7 +880,27 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
                       <td className="strong">{b.title}</td>
                       <td>{b.author}</td>
                       <td><span className="tag">{b.genre}</span></td>
-                      <td className="mono">{b.available}/{b.total}</td>
+                      <td className="mono">
+                        <div className="stepper">
+                          <button
+                            className="icon-btn stepper-btn"
+                            title="Take one copy off the shelf"
+                            onClick={() => adjustAvailable(b.id, -1)}
+                            disabled={b.available <= 0}
+                          >
+                            <Minus size={12} />
+                          </button>
+                          <span className="stepper-value">{b.available}/{b.total}</span>
+                          <button
+                            className="icon-btn stepper-btn"
+                            title="Add one copy back to the shelf"
+                            onClick={() => adjustAvailable(b.id, 1)}
+                            disabled={b.available >= b.total}
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                      </td>
                       <td>
                         <span className={`avail-badge ${b.available > 0 ? "yes" : "no"}`}>
                           {b.available > 0 ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
@@ -594,9 +908,6 @@ function LibrarianDashboard({ books, setBooks, borrowers, onLogout }) {
                         </span>
                       </td>
                       <td className="row-actions">
-                        <button className="icon-btn" title="Toggle availability" onClick={() => toggleAvailability(b.id)}>
-                          <Pencil size={14} />
-                        </button>
                         <button className="icon-btn danger" title="Remove book" onClick={() => removeBook(b.id)}>
                           <Trash2 size={14} />
                         </button>
@@ -769,6 +1080,8 @@ function GlobalStyle() {
         --rust-light: #F1DAD3;
         --sage: #6E7F5C;
         --sage-light: #E1E8D6;
+        --amber: #A66A1E;
+        --amber-light: #F3E1C2;
         --line: #D9CCA6;
 
         font-family: 'Source Serif 4', Georgia, serif;
@@ -865,6 +1178,10 @@ function GlobalStyle() {
       .input-wrap:focus-within { border-color: var(--brass); box-shadow: 0 0 0 3px rgba(184,134,58,0.15); }
       .input-wrap input, .input-wrap select { border: none; outline: none; width: 100%; font-size: 14.5px; color: var(--ink); background: transparent; }
       .hint { font-size: 12.5px; color: var(--ink-soft); margin: -6px 0 0; }
+      .form-error {
+        display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--rust);
+        background: var(--rust-light); padding: 9px 12px; border-radius: 3px; margin: -4px 0 0;
+      }
 
       .btn-primary {
         background: var(--forest); color: #fff; border: none; border-radius: 3px;
@@ -908,6 +1225,12 @@ function GlobalStyle() {
         font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 7px;
       }
       .drawer-tab.active { background: var(--brass); color: var(--forest-deep); font-weight: 600; }
+      .tab-badge {
+        background: var(--rust); color: #fff; font-size: 11px; font-weight: 700;
+        min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .drawer-tab.active .tab-badge { background: var(--forest-deep); color: #fff; }
       .topbar-user { display: flex; align-items: center; gap: 14px; }
       .who { display: flex; flex-direction: column; text-align: right; line-height: 1.25; }
       .who-name { font-size: 13.5px; font-weight: 600; }
@@ -926,6 +1249,7 @@ function GlobalStyle() {
       .section-head p { margin: 0; color: var(--ink-soft); font-size: 14px; }
       .overdue-flag { color: var(--rust); font-weight: 600; }
       .subhead { font-size: 15px; margin: 30px 0 12px; color: var(--forest-deep); }
+      .subhead-note { font-size: 12px; color: var(--ink-soft); font-family: 'Source Serif 4', serif; font-weight: 400; margin-left: 8px; }
 
       .toolbar { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
       .search-box {
@@ -968,9 +1292,11 @@ function GlobalStyle() {
 
       .btn-small {
         background: var(--brass); color: var(--forest-deep); border: none; border-radius: 3px;
-        padding: 7px 12px; font-size: 12.5px; font-weight: 700;
+        padding: 7px 12px; font-size: 12.5px; font-weight: 700; white-space: nowrap;
       }
       .btn-small:disabled { background: var(--parchment-deep); color: var(--ink-soft); cursor: not-allowed; }
+      .btn-small.btn-cancel { background: var(--rust-light); color: var(--rust); }
+      .btn-small.btn-return { background: var(--sage-light); color: #3E4C2F; }
 
       /* ---------- RECORD LIST (user's borrowed books) ---------- */
       .record-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
@@ -981,9 +1307,11 @@ function GlobalStyle() {
       }
       .record-row.status-overdue { border-left-color: var(--rust); }
       .record-row.status-returned { border-left-color: var(--line); opacity: 0.85; }
+      .record-row.status-hold { border-left-color: var(--amber); }
       .record-main h4 { font-size: 15px; margin-bottom: 4px; }
-      .record-meta { font-size: 12.5px; color: var(--ink-soft); display: flex; gap: 8px; }
+      .record-meta { font-size: 12.5px; color: var(--ink-soft); display: flex; gap: 8px; align-items: center; }
       .record-side { display: flex; align-items: center; gap: 12px; }
+      .hold-countdown { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); font-weight: 600; }
 
       .status-chip {
         display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
@@ -992,6 +1320,7 @@ function GlobalStyle() {
       .status-chip.returned { background: var(--parchment-deep); color: var(--ink-soft); }
       .status-chip.active { background: var(--sage-light); color: #3E4C2F; }
       .status-chip.overdue { background: var(--rust-light); color: var(--rust); }
+      .status-chip.hold { background: var(--amber-light); color: var(--amber); }
 
       /* ---------- TABLE (librarian) ---------- */
       .table-card { background: var(--card); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
@@ -1010,6 +1339,14 @@ function GlobalStyle() {
       }
       .icon-btn:hover { border-color: var(--brass); color: var(--brass); }
       .icon-btn.danger:hover { border-color: var(--rust); color: var(--rust); }
+      .icon-btn.approve { color: var(--sage); border-color: var(--sage-light); }
+      .icon-btn.approve:hover { border-color: var(--sage); background: var(--sage-light); }
+
+      .stepper { display: inline-flex; align-items: center; gap: 8px; }
+      .stepper-btn { padding: 5px; }
+      .stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+      .stepper-btn:disabled:hover { border-color: var(--line); color: var(--ink-soft); }
+      .stepper-value { min-width: 44px; text-align: center; }
 
       .filter-toggle { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 13px; }
       .filter-toggle button { border: 1px solid var(--line); background: var(--card); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; color: var(--ink-soft); font-weight: 500; }

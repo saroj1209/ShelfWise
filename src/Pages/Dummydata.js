@@ -117,32 +117,35 @@ export const AUTHOR_BIOS = {
 };
 
 // ---- Borrow records, grouped by user id (matches DUMMY_USERS ids above) ----
+// Each record now carries a `bookId` (matching an id in DUMMY_BOOKS above) so
+// LibraryApp.jsx can always restock the right title on return, with no
+// title-matching fallback needed.
 export const DUMMY_BORROWERS = [
   {
     id: "u1", name: "Aditi Sharma", email: "aditi@mail.com",
     records: [
-      { id: "r1", title: "Sapiens", borrowed: "2026-06-20", due: "2026-07-04", returned: null },
-      { id: "r2", title: "Atomic Habits", borrowed: "2026-07-10", due: "2026-07-24", returned: null },
-      { id: "r3", title: "The Great Gatsby", borrowed: "2026-05-01", due: "2026-05-15", returned: "2026-05-13" },
+      { id: "r1", bookId: 2, title: "Sapiens", borrowed: "2026-06-20", due: "2026-07-04", returned: null },
+      { id: "r2", bookId: 6, title: "Atomic Habits", borrowed: "2026-07-10", due: "2026-07-24", returned: null },
+      { id: "r3", bookId: 7, title: "The Great Gatsby", borrowed: "2026-05-01", due: "2026-05-15", returned: "2026-05-13" },
     ],
   },
   {
     id: "u2", name: "Rohan Patil", email: "rohan@mail.com",
     records: [
-      { id: "r4", title: "Dune", borrowed: "2026-07-01", due: "2026-07-15", returned: null },
+      { id: "r4", bookId: 10, title: "Dune", borrowed: "2026-07-01", due: "2026-07-15", returned: null },
     ],
   },
   {
     id: "u3", name: "Meera Iyer", email: "meera@mail.com",
     records: [
-      { id: "r5", title: "Educated", borrowed: "2026-07-15", due: "2026-07-29", returned: null },
-      { id: "r6", title: "The Hobbit", borrowed: "2026-06-01", due: "2026-06-15", returned: "2026-06-14" },
+      { id: "r5", bookId: 4, title: "Educated", borrowed: "2026-07-15", due: "2026-07-29", returned: null },
+      { id: "r6", bookId: 3, title: "The Hobbit", borrowed: "2026-06-01", due: "2026-06-15", returned: "2026-06-14" },
     ],
   },
   {
     id: "u4", name: "Karan Mehta", email: "karan@mail.com",
     records: [
-      { id: "r7", title: "Project Hail Mary", borrowed: "2026-07-05", due: "2026-07-19", returned: null },
+      { id: "r7", bookId: 5, title: "Project Hail Mary", borrowed: "2026-07-05", due: "2026-07-19", returned: null },
     ],
   },
 ];
