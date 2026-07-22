@@ -26,10 +26,6 @@ export default function Landing() {
           <nav className="landing-nav-buttons">
             <button className="nav-btn" onClick={() => navigate("/")}>Home</button>
             <button className="nav-btn" onClick={() => navigate("/support")}>Support</button>
-            <button className="nav-btn" onClick={() => navigate("/login")}>Login</button>
-            <button className="nav-btn primary" onClick={() => navigate("/signup")}>
-              Signup <ArrowRight size={14} />
-            </button>
           </nav>
         </header>
 
@@ -59,6 +55,15 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Source+Serif+4:wght@400;500;600&display=swap');
 
+      /* Reset default browser margins so the full-bleed hero has no white
+         gaps along the top/side edges (the classic 8px body margin culprit). */
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100%;
+      }
+
       .landing-root {
         --ink-light: #F2ECD9;
         --forest: #1F3B30;
@@ -68,6 +73,7 @@ function GlobalStyle() {
 
         font-family: 'Source Serif 4', Georgia, serif;
         width: 100%;
+        margin: 0;
       }
       .landing-root *, .landing-root *::before, .landing-root *::after { box-sizing: border-box; }
       .landing-root h1 { font-family: 'Fraunces', serif; margin: 0; }
@@ -75,11 +81,14 @@ function GlobalStyle() {
 
       .landing-hero {
         position: relative;
+        width: 100%;
         min-height: 100vh;
         background-size: cover;
         background-position: center 60%;
+        background-repeat: no-repeat;
         display: flex;
         flex-direction: column;
+        margin: 0;
       }
       .landing-scrim {
         position: absolute; inset: 0;

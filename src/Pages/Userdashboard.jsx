@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   BookOpen, Search, ClipboardList, CheckCircle2, AlertTriangle,
-  Clock3, X, Hourglass,
+  Clock3, X, Bell,
 } from "lucide-react";
 import { CatalogNav, DueStamp, EmptyState } from "./LibraryShared";
-import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown } from "./libraryHelpers";
+import { GENRES, TODAY, fmtDate, recordStatus, daysBetween } from "./libraryHelpers";
 import { AUTHOR_BIOS } from "./Dummydata";
 
 /* ---------------------------------------------------------
@@ -27,6 +27,64 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
     [holds, currentUser]
   );
 
+  /* -----------------------------------------------------
+     Waitlist availability notifications
+     Watches books this user is on the waitlist for, and
+     raises a dismissible toast the moment a copy frees up.
+  ----------------------------------------------------- */
+  const [notifications, setNotifications] = useState([]);
+  const prevAvailability = useRef({});
+
+  useEffect(() => {
+    const justFreedUp = [];
+
+    books.forEach((b) => {
+      const wasOut = prevAvailability.current[b.id] === 0;
+      const isNowAvailable = b.available > 0;
+      const hasMyHold = holds.some((h) => h.bookId === b.id && h.userId === currentUser.id);
+
+      if (wasOut && isNowAvailable && hasMyHold) {
+        justFreedUp.push(b);
+      }
+      prevAvailability.current[b.id] = b.available;
+    });
+
+    if (justFreedUp.length > 0) {
+      setNotifications((prev) => [
+        ...prev,
+        ...justFreedUp.map((b) => ({
+          id: `${b.id}-avail-${Date.now()}`,
+          bookId: b.id,
+          type: "available",
+          title: b.title,
+          message: "is now available to borrow.",
+        })),
+      ]);
+    }
+  }, [books, holds, currentUser.id]);
+
+  function dismissNotification(id) {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }
+
+  // Wraps onBorrow so joining a waitlist gets an immediate checkmark
+  // confirmation, on top of the later "it's available" notification.
+  function handleBorrow(book) {
+    onBorrow(book);
+    if (book.available <= 0) {
+      setNotifications((prev) => [
+        ...prev,
+        {
+          id: `${book.id}-joined-${Date.now()}`,
+          bookId: book.id,
+          type: "joined",
+          title: book.title,
+          message: "added to your waitlist — we'll notify you when it's available.",
+        },
+      ]);
+    }
+  }
+
   const filteredBooks = books.filter((b) => {
     const matchesQuery =
       b.title.toLowerCase().includes(query.toLowerCase()) ||
@@ -41,6 +99,32 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
 
   return (
     <div className="dash">
+      <NotifStyle />
+
+      {notifications.length > 0 && (
+        <div className="notif-stack">
+          {notifications.map((n) => (
+            <div key={n.id} className={`notif-toast ${n.type === "joined" ? "notif-joined" : "notif-available"}`}>
+              {n.type === "joined" ? (
+                <CheckCircle2 size={15} className="notif-icon" />
+              ) : (
+                <Bell size={15} className="notif-icon" />
+              )}
+              <div className="notif-text">
+                <strong>{n.title}</strong> {n.message}
+              </div>
+              <button
+                className="notif-dismiss"
+                onClick={() => dismissNotification(n.id)}
+                aria-label="Dismiss notification"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <CatalogNav
         tabs={[
           { key: "browse", label: "Browse books", icon: <BookOpen size={16} /> },
@@ -97,7 +181,7 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
                   currentUser={currentUser}
                   holds={holds}
                   now={now}
-                  onBorrow={onBorrow}
+                  onBorrow={handleBorrow}
                   onCancelHold={onCancelHold}
                 />
               ))}
@@ -120,10 +204,10 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
 
             {myHolds.length > 0 && (
               <>
-                <h3 className="subhead">Pending requests <span className="subhead-note">awaiting librarian approval</span></h3>
+                <h3 className="subhead">On waitlist</h3>
                 <div className="record-list">
                   {myHolds.map((h) => (
-                    <HoldRow key={h.id} hold={h} now={now} onCancel={() => onCancelHold(h.id)} />
+                    <HoldRow key={h.id} hold={h} onCancel={() => onCancelHold(h.id)} />
                   ))}
                 </div>
               </>
@@ -157,7 +241,7 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
           currentUser={currentUser}
           holds={holds}
           now={now}
-          onBorrow={onBorrow}
+          onBorrow={handleBorrow}
           onCancelHold={onCancelHold}
         />
       )}
@@ -165,21 +249,18 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
   );
 }
 
-/* Pending-hold row shown to the requester, with a live countdown + cancel */
-function HoldRow({ hold, now, onCancel }) {
-  const remaining = msLeft(hold.requestedAt, now);
+/* Pending-hold row shown to the requester, with a cancel option */
+function HoldRow({ hold, onCancel }) {
   return (
     <div className="record-row status-hold">
       <div className="record-main">
         <h4>{hold.bookTitle}</h4>
         <div className="record-meta">
           <span>Requested {new Date(hold.requestedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-          <span className="dot">·</span>
-          <span className="hold-countdown"><Hourglass size={12} /> {fmtCountdown(remaining)}</span>
         </div>
       </div>
       <div className="record-side">
-        <span className="status-chip hold"><Clock3 size={13} /> Awaiting approval</span>
+        <span className="status-chip onwaitlist"><CheckCircle2 size={13} /> On waitlist</span>
         <button className="btn-small btn-cancel" onClick={onCancel}>Cancel request</button>
       </div>
     </div>
@@ -201,29 +282,25 @@ function BookCard({ book, onSelect, currentUser, holds, now, onBorrow, onCancelH
         <p className="isbn">ISBN {book.isbn}</p>
         <div className="book-foot">
           {myHold ? (
-            <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(myHold.requestedAt, now))}</span>
-          ) : (
-            <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
-              {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
-              {isAvailable ? `${book.available} available` : "All copies out"}
-            </span>
-          )}
-
-          {myHold ? (
             <button
-              className="btn-small btn-cancel"
+              className="btn-small btn-onwaitlist"
               onClick={(e) => { e.stopPropagation(); onCancelHold(myHold.id); }}
             >
-              Cancel
+              <CheckCircle2 size={13} /> On waitlist
             </button>
           ) : (
-            <button
-              className="btn-small"
-              disabled={!isAvailable}
-              onClick={(e) => { e.stopPropagation(); onBorrow(book); }}
-            >
-              {isAvailable ? "Borrow" : "Join waitlist"}
-            </button>
+            <>
+              <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
+                {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                {isAvailable ? `${book.available} available` : "All copies out"}
+              </span>
+              <button
+                className="btn-small"
+                onClick={(e) => { e.stopPropagation(); onBorrow(book); }}
+              >
+                {isAvailable ? "Borrow" : "Join waitlist"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -249,7 +326,7 @@ function BookDetailModal({ book, allBooks, onClose, onSelectBook, currentUser, h
           <div className="book-modal-top">
             <span className="tag">{book.genre}</span>
             {myHold ? (
-              <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(myHold.requestedAt, now))}</span>
+              <span className="avail-badge onwaitlist"><CheckCircle2 size={13} /> On waitlist</span>
             ) : (
               <span className={`avail-badge ${isAvailable ? "yes" : "no"}`}>
                 {isAvailable ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
@@ -264,11 +341,11 @@ function BookDetailModal({ book, allBooks, onClose, onSelectBook, currentUser, h
           <p className="book-modal-desc">{book.description || "No description available for this title yet."}</p>
 
           {myHold ? (
-            <button className="btn-small btn-cancel modal-borrow" onClick={() => onCancelHold(myHold.id)}>
-              Cancel request
+            <button className="btn-small btn-onwaitlist modal-borrow" onClick={() => onCancelHold(myHold.id)}>
+              <CheckCircle2 size={13} /> On waitlist
             </button>
           ) : (
-            <button className="btn-small modal-borrow" disabled={!isAvailable} onClick={() => onBorrow(book)}>
+            <button className="btn-small modal-borrow" onClick={() => onBorrow(book)}>
               {isAvailable ? "Borrow this book" : "Join waitlist"}
             </button>
           )}
@@ -341,5 +418,66 @@ function RecordRow({ record, onReturn }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* Scoped styles for the waitlist-availability toast stack */
+function NotifStyle() {
+  return (
+    <style>{`
+      .notif-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 340px;
+      }
+      .notif-toast {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: #1F3B30;
+        color: #F2ECD9;
+        border: 1px solid rgba(184,134,58,0.5);
+        border-radius: 6px;
+        padding: 12px 14px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+        animation: notif-in .25s ease;
+      }
+      .notif-icon { flex-shrink: 0; margin-top: 2px; color: #E0B876; }
+      .notif-joined .notif-icon { color: #7FC29B; }
+      .notif-joined { border-color: rgba(127,194,155,0.5); }
+      .btn-onwaitlist,
+      .avail-badge.onwaitlist,
+      .status-chip.onwaitlist {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: #7FC29B;
+        border: 1px solid #7FC29B;
+        color: #142A22;
+      }
+      .btn-onwaitlist:hover { background: #6FB48B; border-color: #6FB48B; }
+      .notif-text { font-size: 13.5px; line-height: 1.4; flex: 1; }
+      .notif-text strong { font-weight: 600; }
+      .notif-dismiss {
+        background: transparent;
+        border: none;
+        color: rgba(242,236,217,0.7);
+        cursor: pointer;
+        padding: 2px;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .notif-dismiss:hover { color: #F2ECD9; }
+      @keyframes notif-in {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `}</style>
   );
 }
