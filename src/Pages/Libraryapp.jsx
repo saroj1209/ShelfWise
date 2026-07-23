@@ -35,13 +35,26 @@ export default function App({ initialSession = null }) {
     setHolds((prev) => prev.filter((h) => msLeft(h.requestedAt, now) > 0));
     setBooks((prev) =>
       prev.map((b) => {
-        const releasedCount = expired.filter((h) => h.bookId === b.id).length;
+        const releasedCount = expired.filter((h) => h.bookId === b.id && h.reserved).length;
         return releasedCount > 0 ? { ...b, available: b.available + releasedCount } : b;
       })
     );
   }, [now, holds]);
 
   function requestBorrow(book, user) {
+    // Guard against double-clicks / stale UI creating a second hold for the
+    // same reader on the same book before the button has a chance to swap
+    // into its "pending" state.
+    const alreadyHasHold = holds.some((h) => h.bookId === book.id && h.userId === user.id);
+    if (alreadyHasHold) return;
+
+    // Was a physical copy actually taken off the shelf for this hold?
+    // Recorded once, here, and never re-derived from live stock later —
+    // that's what the countdown display and the +1-on-release logic rely
+    // on, so a book with several copies doesn't wrongly look "available
+    // again" the moment one of them gets reserved.
+    const reserved = book.available > 0;
+
     setBooks((prev) =>
       prev.map((b) => (b.id === book.id && b.available > 0 ? { ...b, available: b.available - 1 } : b))
     );
@@ -56,6 +69,7 @@ export default function App({ initialSession = null }) {
         userName: user.name,
         userEmail: user.email,
         requestedAt: Date.now(),
+        reserved,
       },
     ]);
   }
@@ -64,7 +78,12 @@ export default function App({ initialSession = null }) {
     const hold = holds.find((h) => h.id === holdId);
     if (!hold) return;
     setHolds((prev) => prev.filter((h) => h.id !== holdId));
-    setBooks((prev) => prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b)));
+    // Only give a copy back if this hold had actually taken one — a
+    // waitlist-only hold (book was already out when requested) never
+    // reserved anything, so cancelling it shouldn't inflate the count.
+    if (hold.reserved) {
+      setBooks((prev) => prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b)));
+    }
   }
 
   function approveHold(holdId) {

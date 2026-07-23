@@ -319,7 +319,7 @@ export function GlobalStyle() {
       .record-main h4 { font-size: 15px; margin-bottom: 4px; }
       .record-meta { font-size: 12.5px; color: var(--ink-soft); display: flex; gap: 8px; align-items: center; }
       .record-side { display: flex; align-items: center; gap: 12px; }
-      .hold-countdown { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); font-weight: 600; }
+      .hold-countdown { display: inline-flex; align-items: center; gap: 4px; color: var(--rust); font-weight: 700; }
 
       .status-chip {
         display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
@@ -329,6 +329,14 @@ export function GlobalStyle() {
       .status-chip.active { background: var(--sage-light); color: #3E4C2F; }
       .status-chip.overdue { background: var(--rust-light); color: var(--rust); }
       .status-chip.hold { background: var(--amber-light); color: var(--amber); }
+      .status-chip.hold-timer { background: var(--rust-light); color: var(--rust); font-weight: 700; }
+      .status-chip.onwaitlist,
+      .avail-badge.onwaitlist,
+      .btn-onwaitlist {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #7FC29B; border: 1px solid #7FC29B; color: #142A22;
+      }
+      .btn-onwaitlist:hover { background: #6FB48B; border-color: #6FB48B; }
 
       /* ---------- TABLE (librarian) ---------- */
       .table-card { background: var(--card); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }

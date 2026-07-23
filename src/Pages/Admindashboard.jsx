@@ -99,7 +99,7 @@ export default function AdminDashboard({ books, setBooks, borrowers, holds, now,
                           {new Date(h.requestedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                         </td>
                         <td>
-                          <span className="status-chip hold"><Hourglass size={13} /> {fmtCountdown(msLeft(h.requestedAt, now))}</span>
+                          <span className="status-chip hold-timer"><Hourglass size={13} /> {fmtCountdown(msLeft(h.requestedAt, now))}</span>
                         </td>
                         <td className="row-actions">
                           <button className="icon-btn approve" title="Approve request" onClick={() => onApproveHold(h.id)}>
