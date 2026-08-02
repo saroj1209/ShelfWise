@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import { CatalogNav, DueStamp, EmptyState } from "./LibraryShared";
 import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown, getRecentBorrowRecords } from "./libraryHelpers";
-import { AUTHOR_BIOS } from "./Dummydata";
 
 /* ---------------------------------------------------------
    USER DASHBOARD (Reader)
@@ -440,7 +439,7 @@ function BookCard({ book, onSelect, currentUser, holds, now, onBorrow, onCancelH
 }
 
 function BookDetailModal({ book, allBooks, onClose, onSelectBook, currentUser, holds, now, onBorrow, onCancelHold, onCancelWithPrompt }) {
-  const bio = AUTHOR_BIOS[book.author];
+  const bio = "";
   const moreByAuthor = allBooks.filter((b) => b.author === book.author && b.id !== book.id);
   const isAvailable = book.available > 0;
   const myHold = holds.find((h) => h.bookId === book.id && h.userId === currentUser.id);

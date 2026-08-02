@@ -2,10 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   LibraryBig, User, UserCog, Mail, Lock, ArrowRight, AlertTriangle,
 } from "lucide-react";
-import {
-  DUMMY_BOOKS,
-  DUMMY_USERS, registerUser, emailExists,
-} from "./Dummydata";
 import { GlobalStyle, DueStamp } from "./LibraryShared";
 import { TODAY, HOLD_DURATION_MS, uid, msLeft } from "./libraryHelpers";
 import UserDashboard from "./UserDashboard";
@@ -18,7 +14,8 @@ import { getStoredValue, setStoredValue } from "./libraryStorage";
 
 export default function App({ initialSession = null }) {
   const [session, setSession] = useState(initialSession); // { role: 'user'|'librarian', user: {...} }
-  const [books, setBooks] = useState(DUMMY_BOOKS);
+  const [books, setBooks] = useState([]);
+  const [booksLoaded, setBooksLoaded] = useState(false);
   const [borrowers, setBorrowers] = useState([]);
   const [holds, setHolds] = useState(() => getStoredValue("shelfwise-holds", [])); // pending borrow requests awaiting librarian approval
   const [now, setNow] = useState(Date.now());
@@ -32,6 +29,32 @@ export default function App({ initialSession = null }) {
   useEffect(() => {
     setStoredValue("shelfwise-holds", holds);
   }, [holds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("http://localhost:3000/books?q=library", { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed to load books");
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          const normalized = Array.isArray(data) ? data : [];
+          setBooks(normalized);
+          setBooksLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBooks([]);
+          setBooksLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // auto-release any hold that's been sitting for 24h without approval
   useEffect(() => {
@@ -167,6 +190,26 @@ export default function App({ initialSession = null }) {
     }
   }
 
+  if (!booksLoaded && !session) {
+    return (
+      <div className="lms-root">
+        <GlobalStyle />
+        <div className="auth-wrap">
+          <div className="auth-card-frame">
+            <div className="auth-left">
+              <div className="brand">
+                <div className="brand-mark"><LibraryBig size={22} /></div>
+                <span>Shelfwise</span>
+              </div>
+              <h1>Loading your library catalog…</h1>
+              <p>We’re connecting to the live book service using your Google Books API key.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="lms-root">
       <GlobalStyle />
@@ -203,9 +246,7 @@ export default function App({ initialSession = null }) {
 
 /* ---------------------------------------------------------
    AUTH SCREEN (Login / Signup, role switch)
-   Validates against DUMMY_USERS from Dummydata.js. If your project
-   already has separate Login.jsx / Signup.jsx pages wired into routing,
-   port this validation logic over there instead of using this screen.
+   Uses the backend authentication endpoints for login and signup.
 --------------------------------------------------------- */
 
 function AuthScreen({ onLogin }) {
@@ -213,29 +254,59 @@ function AuthScreen({ onLogin }) {
   const [role, setRole] = useState("user"); // user | librarian
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     setError("");
+    setBusy(true);
 
-    if (mode === "login") {
-      const match = DUMMY_USERS.find(
-        (u) => u.email.trim().toLowerCase() === form.email.trim().toLowerCase() && u.password === form.password
-      );
-      if (!match) { setError("No account matches that email and password."); return; }
-      if (match.role !== role) {
-        setError(`That email is registered as a ${match.role === "librarian" ? "Librarian" : "Reader"} — switch tabs above and try again.`);
-        return;
+    try {
+      if (mode === "login") {
+        const res = await fetch("http://localhost:3000/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email.trim(), password: form.password }),
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Login failed");
+        }
+
+        const profileRes = await fetch("http://localhost:3000/users/me", { credentials: "include" });
+        if (!profileRes.ok) throw new Error("Unable to load your profile");
+        const user = await profileRes.json();
+
+        if (user.role !== role) {
+          throw new Error(`That account is registered as a ${user.role === "librarian" ? "Librarian" : "Reader"}.`);
+        }
+
+        onLogin({ role: user.role, user: { id: user._id, name: user.name, email: user.email } });
+      } else {
+        if (!form.name.trim() || !form.email.trim() || !form.password) {
+          throw new Error("Fill in every field to create an account.");
+        }
+
+        const res = await fetch("http://localhost:3000/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), password: form.password, role }),
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Signup failed");
+        }
+
+        onLogin({ role, user: { id: `new-${Date.now()}`, name: form.name.trim(), email: form.email.trim() } });
       }
-      onLogin({ role: match.role, user: { id: match.id, name: match.name, email: match.email } });
-    } else {
-      if (!form.name.trim() || !form.email.trim() || !form.password) {
-        setError("Fill in every field to create an account.");
-        return;
-      }
-      if (emailExists(form.email)) { setError("An account with that email already exists."); return; }
-      const created = registerUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role });
-      onLogin({ role: created.role, user: { id: created.id, name: created.name, email: created.email } });
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -332,8 +403,8 @@ function AuthScreen({ onLogin }) {
 
             {error && <p className="form-error"><AlertTriangle size={13} /> {error}</p>}
 
-            <button type="submit" className="btn-primary full">
-              {mode === "login" ? "Log in" : "Create account"} as {role === "user" ? "Reader" : "Librarian"}
+            <button type="submit" className="btn-primary full" disabled={busy}>
+              {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"} as {role === "user" ? "Reader" : "Librarian"}
               <ArrowRight size={16} />
             </button>
           </form>

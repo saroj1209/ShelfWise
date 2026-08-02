@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LibraryBig, Mail, ArrowRight, ArrowLeft, CheckCircle2 } from "lucide-react";
-import { emailExists } from "./dummyData";
 
 /**
  * ForgotPassword.jsx
@@ -21,7 +20,7 @@ export default function ForgotPassword() {
 
     setStatus("sending");
     setTimeout(() => {
-      setStatus(emailExists(email) ? "sent" : "not-found");
+      setStatus("sent");
     }, 600);
   }
 
