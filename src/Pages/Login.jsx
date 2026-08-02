@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LibraryBig, User, UserCog, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
-import { DUMMY_USERS } from "./dummyData";
 
 /**
  * Login.jsx — navigation is now internal via react-router-dom.
@@ -16,24 +15,52 @@ export default function Login({ onLoginSuccess = () => {} }) {
   const [role, setRole] = useState("user"); // user | librarian
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   function submit(e) {
     e.preventDefault();
-    const match = DUMMY_USERS.find(
-      (u) =>
-        u.role === role &&
-        u.email.toLowerCase() === form.email.trim().toLowerCase() &&
-        u.password === form.password
-    );
-
-    if (!match) {
-      setError("No account matches that email, password, and role. Try one of the demo logins below.");
-      return;
-    }
-
     setError("");
-    onLoginSuccess({ role: match.role, user: { id: match.id, name: match.name, email: match.email } });
-    navigate("/dashboard");
+    setSuccess("");
+
+    fetch("http://localhost:3000/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: form.email.trim(),
+        password: form.password
+      }),
+      credentials: "include"
+    })
+    .then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Login failed");
+      }
+      return res.text();
+    })
+    .then((msg) => {
+      setSuccess("Login successful! Loading dashboard...");
+      return fetch("http://localhost:3000/users/me", { credentials: "include" });
+    })
+    .then(async (res) => {
+      if (!res.ok) {
+        throw new Error("Failed to load user profile");
+      }
+      return res.json();
+    })
+    .then((user) => {
+      if (user.role !== role) {
+        throw new Error(`Account role is ${user.role}, but you selected ${role}`);
+      }
+      setTimeout(() => {
+        onLoginSuccess({ role: user.role, user: { id: user._id, name: user.name, email: user.email } });
+        navigate("/dashboard");
+      }, 1000);
+    })
+    .catch((err) => {
+      setError(err.message);
+      setSuccess("");
+    });
   }
 
   return (
@@ -108,6 +135,7 @@ export default function Login({ onLoginSuccess = () => {} }) {
             </button>
 
             {error && <p className="error-line">{error}</p>}
+            {success && <p className="success-line">{success}</p>}
           </form>
 
           <div className="demo-hint">
@@ -213,6 +241,10 @@ function GlobalStyle() {
 
       .error-line {
         margin: 4px 0 0; font-size: 13px; color: #9C3B2E; background: #F1DAD3;
+        border-radius: 3px; padding: 9px 12px;
+      }
+      .success-line {
+        margin: 4px 0 0; font-size: 13px; color: #1F3B30; background: #D2E7DF;
         border-radius: 3px; padding: 9px 12px;
       }
       .forgot-link {

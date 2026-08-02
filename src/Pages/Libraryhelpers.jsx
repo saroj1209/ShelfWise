@@ -40,3 +40,9 @@ export function fmtCountdown(ms) {
 export function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
+
+export function getRecentBorrowRecords(records, count = 4) {
+  return [...records]
+    .sort((a, b) => new Date(b.borrowed) - new Date(a.borrowed))
+    .slice(0, count);
+}

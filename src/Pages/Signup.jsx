@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LibraryBig, User, UserCog, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
-import { registerUser, emailExists } from "./dummyData";
 
 /**
  * Signup.jsx
@@ -16,7 +15,7 @@ export default function Signup({ onSignupSuccess = () => {} }) {
   const [role, setRole] = useState("user"); // user | librarian
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [error, setError] = useState("");
-
+  const [success, setSuccess] = useState("");
   function submit(e) {
     e.preventDefault();
 
@@ -32,21 +31,38 @@ export default function Signup({ onSignupSuccess = () => {} }) {
       setError("Passwords don't match.");
       return;
     }
-    if (emailExists(form.email)) {
-      setError("An account with that email already exists — try logging in instead.");
-      return;
-    }
-
-    const newUser = registerUser({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      password: form.password,
-      role,
-    });
 
     setError("");
-    onSignupSuccess({ role: newUser.role, user: { id: newUser.id, name: newUser.name, email: newUser.email } });
-    navigate("/dashboard");
+    setSuccess("");
+
+    fetch("http://localhost:3000/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        role
+      })
+    })
+    .then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Signup failed");
+      }
+      return res.json();
+    })
+    .then(() => {
+      setSuccess(role === "librarian"
+        ? "Librarian account created successfully. You can sign in from the librarian tab now."
+        : "Account created successfully! Redirecting you to login...");
+      setTimeout(() => {
+        navigate("/login");
+      }, 1800);
+    })
+    .catch((err) => {
+      setError(err.message);
+    });
   }
 
   return (
@@ -143,6 +159,7 @@ export default function Signup({ onSignupSuccess = () => {} }) {
             )}
 
             {error && <p className="error-line">{error}</p>}
+            {success && <p className="success-line">{success}</p>}
 
             <button type="submit" className="btn-primary full">
               Create account as {role === "user" ? "Reader" : "Librarian"}
@@ -237,6 +254,10 @@ function GlobalStyle() {
 
       .error-line {
         margin: -4px 0 0; font-size: 13px; color: #9C3B2E; background: #F1DAD3;
+        border-radius: 3px; padding: 9px 12px;
+      }
+      .success-line {
+        margin: -4px 0 0; font-size: 13px; color: #1F3B30; background: #D2E7DF;
         border-radius: 3px; padding: 9px 12px;
       }
 

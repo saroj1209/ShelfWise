@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./Pages/Landing";
 import Login from "./Pages/Login";
@@ -9,17 +9,44 @@ import "./App.css";
 
 /**
  * App.jsx — routes via react-router-dom.
- *
- * Routes:
- *   "/"                -> Landing
- *   "/login"            -> Login (on success, lifts session into App state)
- *   "/signup"           -> Signup (creates a demo account, then logs it in)
- *   "/forgot-password"  -> ForgotPassword (static/demo flow, no real email sent)
- *   "/dashboard"        -> LibraryApp, only reachable once `session` is set —
- *                          otherwise redirects back to "/login"
  */
 function App() {
   const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("http://localhost:3000/users/me", { credentials: "include" })
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error("Not logged in");
+      })
+      .then((user) => {
+        setSession({ role: user.role, user: { id: user._id, name: user.name, email: user.email } });
+      })
+      .catch(() => {
+        setSession(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "#EFE8D3",
+        color: "#1F3B30",
+        fontFamily: "'Source Serif 4', Georgia, serif",
+        fontSize: "20px"
+      }}>
+        Loading Shelfwise...
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

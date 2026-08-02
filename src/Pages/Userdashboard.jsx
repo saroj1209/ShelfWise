@@ -4,7 +4,7 @@ import {
   Clock3, X, Bell, Hourglass,
 } from "lucide-react";
 import { CatalogNav, DueStamp, EmptyState } from "./LibraryShared";
-import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown } from "./libraryHelpers";
+import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown, getRecentBorrowRecords } from "./libraryHelpers";
 import { AUTHOR_BIOS } from "./Dummydata";
 
 /* ---------------------------------------------------------
@@ -75,6 +75,25 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
     }
   }, [books, holds, currentUser.id]);
 
+  useEffect(() => {
+    function handleAvailability(event) {
+      if (event.detail.userId !== currentUser.id) return;
+      setNotifications((prev) => [
+        ...prev,
+        {
+          id: `${event.detail.bookId}-avail-${Date.now()}`,
+          bookId: event.detail.bookId,
+          type: "available",
+          title: event.detail.title,
+          message: "is now available to borrow.",
+        },
+      ]);
+    }
+
+    window.addEventListener("shelfwise:availability", handleAvailability);
+    return () => window.removeEventListener("shelfwise:availability", handleAvailability);
+  }, [currentUser.id]);
+
   function dismissNotification(id) {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }
@@ -124,6 +143,7 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
 
   const current = myRecords.filter((r) => !r.returned);
   const history = myRecords.filter((r) => r.returned);
+  const recent = getRecentBorrowRecords(myRecords, 4);
   const overdueCount = current.filter((r) => recordStatus(r) === "overdue").length;
 
   return (
@@ -274,6 +294,14 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
             <div className="record-list">
               {current.map((r) => (
                 <RecordRow key={r.id} record={r} onReturn={() => onReturn(r)} />
+              ))}
+            </div>
+
+            <h3 className="subhead">Recent borrowed</h3>
+            {recent.length === 0 && <EmptyState text="Your recent loans will appear here after approval." />}
+            <div className="record-list">
+              {recent.map((r) => (
+                <RecordRow key={r.id} record={r} onReturn={r.returned ? undefined : () => onReturn(r)} />
               ))}
             </div>
 

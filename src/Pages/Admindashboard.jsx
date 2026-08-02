@@ -10,7 +10,7 @@ import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown
    ADMIN DASHBOARD (Librarian)
 --------------------------------------------------------- */
 
-export default function AdminDashboard({ books, setBooks, borrowers, holds, now, onLogout, onApproveHold, onRejectHold }) {
+export default function AdminDashboard({ currentUser, books, setBooks, borrowers, holds, now, onLogout, onApproveHold, onRejectHold }) {
   const [tab, setTab] = useState("requests");
   const [filter, setFilter] = useState("all"); // all | overdue
   const [showAdd, setShowAdd] = useState(false);
@@ -55,7 +55,7 @@ export default function AdminDashboard({ books, setBooks, borrowers, holds, now,
         ]}
         active={tab}
         onChange={setTab}
-        name="Mr. Deshpande"
+        name={currentUser?.name || "Librarian"}
         roleLabel="Librarian"
         onLogout={onLogout}
       />

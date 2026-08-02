@@ -3,13 +3,14 @@ import {
   LibraryBig, User, UserCog, Mail, Lock, ArrowRight, AlertTriangle,
 } from "lucide-react";
 import {
-  DUMMY_BOOKS, DUMMY_BORROWERS,
+  DUMMY_BOOKS,
   DUMMY_USERS, registerUser, emailExists,
 } from "./Dummydata";
 import { GlobalStyle, DueStamp } from "./LibraryShared";
 import { TODAY, HOLD_DURATION_MS, uid, msLeft } from "./libraryHelpers";
 import UserDashboard from "./UserDashboard";
 import AdminDashboard from "./AdminDashboard";
+import { getStoredValue, setStoredValue } from "./libraryStorage";
 
 /* ---------------------------------------------------------
    ROOT APP
@@ -18,8 +19,8 @@ import AdminDashboard from "./AdminDashboard";
 export default function App({ initialSession = null }) {
   const [session, setSession] = useState(initialSession); // { role: 'user'|'librarian', user: {...} }
   const [books, setBooks] = useState(DUMMY_BOOKS);
-  const [borrowers, setBorrowers] = useState(DUMMY_BORROWERS);
-  const [holds, setHolds] = useState([]); // pending borrow requests awaiting librarian approval
+  const [borrowers, setBorrowers] = useState([]);
+  const [holds, setHolds] = useState(() => getStoredValue("shelfwise-holds", [])); // pending borrow requests awaiting librarian approval
   const [now, setNow] = useState(Date.now());
 
   // tick every 30s so countdowns stay fresh
@@ -27,6 +28,10 @@ export default function App({ initialSession = null }) {
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    setStoredValue("shelfwise-holds", holds);
+  }, [holds]);
 
   // auto-release any hold that's been sitting for 24h without approval
   useEffect(() => {
@@ -82,7 +87,11 @@ export default function App({ initialSession = null }) {
     // waitlist-only hold (book was already out when requested) never
     // reserved anything, so cancelling it shouldn't inflate the count.
     if (hold.reserved) {
-      setBooks((prev) => prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b)));
+      setBooks((prev) => {
+        const nextBooks = prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b));
+        handleBookStockChange(nextBooks);
+        return nextBooks;
+      });
     }
   }
 
@@ -119,6 +128,23 @@ export default function App({ initialSession = null }) {
     // subtraction here — the copy simply changes from "on hold" to "on loan".
   }
 
+  function handleBookStockChange(nextBooks) {
+    const previousAvailability = new Map();
+    books.forEach((book) => previousAvailability.set(book.id, book.available));
+
+    nextBooks.forEach((book) => {
+      const previous = previousAvailability.get(book.id) ?? 0;
+      if (previous <= 0 && book.available > 0) {
+        const waitlistHolders = holds.filter((hold) => hold.bookId === book.id && !hold.reserved);
+        waitlistHolders.forEach((hold) => {
+          window.dispatchEvent(new CustomEvent("shelfwise:availability", {
+            detail: { userId: hold.userId, bookId: book.id, title: book.title },
+          }));
+        });
+      }
+    });
+  }
+
   function rejectHold(holdId) {
     cancelHold(holdId); // same effect: release the reserved copy back to the shelf
   }
@@ -133,9 +159,11 @@ export default function App({ initialSession = null }) {
       }))
     );
     if (record.bookId != null) {
-      setBooks((prev) =>
-        prev.map((b) => (b.id === record.bookId ? { ...b, available: b.available + 1 } : b))
-      );
+      setBooks((prev) => {
+        const nextBooks = prev.map((b) => (b.id === record.bookId ? { ...b, available: b.available + 1 } : b));
+        handleBookStockChange(nextBooks);
+        return nextBooks;
+      });
     }
   }
 
@@ -158,6 +186,7 @@ export default function App({ initialSession = null }) {
         />
       ) : (
         <AdminDashboard
+          currentUser={session.user}
           books={books}
           setBooks={setBooks}
           borrowers={borrowers}
