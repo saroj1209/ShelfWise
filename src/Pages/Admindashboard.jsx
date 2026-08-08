@@ -10,7 +10,7 @@ import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown
    ADMIN DASHBOARD (Librarian)
 --------------------------------------------------------- */
 
-export default function AdminDashboard({ currentUser, books, setBooks, borrowers, holds, now, onLogout, onApproveHold, onRejectHold }) {
+export default function AdminDashboard({ currentUser, books, borrowers, holds, now, onLogout, onApproveHold, onRejectHold, onAdjustBook, onRemoveBook, onAddBook }) {
   const [tab, setTab] = useState("requests");
   const [filter, setFilter] = useState("all"); // all | overdue
   const [showAdd, setShowAdd] = useState(false);
@@ -34,15 +34,11 @@ export default function AdminDashboard({ currentUser, books, setBooks, borrowers
   });
 
   function adjustAvailable(id, delta) {
-    setBooks((prev) =>
-      prev.map((b) =>
-        b.id === id ? { ...b, available: Math.max(0, Math.min(b.total, b.available + delta)) } : b
-      )
-    );
+    onAdjustBook(id, delta);
   }
 
   function removeBook(id) {
-    setBooks((prev) => prev.filter((b) => b.id !== id));
+    onRemoveBook(id);
   }
 
   return (
@@ -261,7 +257,7 @@ export default function AdminDashboard({ currentUser, books, setBooks, borrowers
         )}
       </main>
 
-      {showAdd && <AddBookModal onClose={() => setShowAdd(false)} onAdd={(book) => setBooks((p) => [...p, book])} books={books} />}
+      {showAdd && <AddBookModal onClose={() => setShowAdd(false)} onAdd={onAddBook} books={books} />}
     </div>
   );
 }

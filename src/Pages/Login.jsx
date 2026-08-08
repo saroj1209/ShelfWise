@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LibraryBig, User, UserCog, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
+import { authFetch, setToken } from "../libraryApi";
 
 /**
  * Login.jsx — navigation is now internal via react-router-dom.
@@ -36,11 +37,12 @@ export default function Login({ onLoginSuccess = () => {} }) {
         const text = await res.text();
         throw new Error(text || "Login failed");
       }
-      return res.text();
+      return res.json();
     })
-    .then((msg) => {
+    .then((loginData) => {
+      setToken(loginData.token);
       setSuccess("Login successful! Loading dashboard...");
-      return fetch("http://localhost:3000/users/me", { credentials: "include" });
+      return authFetch("/users/me");
     })
     .then(async (res) => {
       if (!res.ok) {

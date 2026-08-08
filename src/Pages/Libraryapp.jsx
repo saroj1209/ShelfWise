@@ -6,18 +6,18 @@ import { GlobalStyle, DueStamp } from "./LibraryShared";
 import { TODAY, HOLD_DURATION_MS, uid, msLeft } from "./libraryHelpers";
 import UserDashboard from "./UserDashboard";
 import AdminDashboard from "./AdminDashboard";
-import { getStoredValue, setStoredValue } from "./libraryStorage";
+import { authFetch } from "../libraryApi";
 
 /* ---------------------------------------------------------
    ROOT APP
 --------------------------------------------------------- */
 
-export default function App({ initialSession = null }) {
+export default function App({ initialSession = null, onLogout = () => {} }) {
   const [session, setSession] = useState(initialSession); // { role: 'user'|'librarian', user: {...} }
   const [books, setBooks] = useState([]);
   const [booksLoaded, setBooksLoaded] = useState(false);
   const [borrowers, setBorrowers] = useState([]);
-  const [holds, setHolds] = useState(() => getStoredValue("shelfwise-holds", [])); // pending borrow requests awaiting librarian approval
+  const [holds, setHolds] = useState([]); // pending borrow requests awaiting librarian approval
   const [now, setNow] = useState(Date.now());
 
   // tick every 30s so countdowns stay fresh
@@ -26,33 +26,32 @@ export default function App({ initialSession = null }) {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => {
-    setStoredValue("shelfwise-holds", holds);
-  }, [holds]);
+  function applyLibraryState(data) {
+    if (!data) return;
+    setBooks(Array.isArray(data.books) ? data.books : []);
+    setHolds(Array.isArray(data.holds) ? data.holds : []);
+    setBorrowers(Array.isArray(data.borrowers) ? data.borrowers : []);
+    setBooksLoaded(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    fetch("http://localhost:3000/books?q=library", { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to load books");
-        return res.json();
-      })
-      .then((data) => {
-        if (!cancelled) {
-          const normalized = Array.isArray(data) ? data : [];
-          setBooks(normalized);
-          setBooksLoaded(true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBooks([]);
-          setBooksLoaded(true);
-        }
-      });
+    const sync = async () => {
+      try {
+        const response = await authFetch("/library/state");
+        if (!response.ok) throw new Error("Failed to load shared library state");
+        const data = await response.json();
+        if (!cancelled) applyLibraryState(data);
+      } catch {
+        if (!cancelled) setBooksLoaded(true);
+      }
+    };
 
+    sync();
+    const interval = setInterval(sync, 1500);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 
@@ -83,70 +82,29 @@ export default function App({ initialSession = null }) {
     // again" the moment one of them gets reserved.
     const reserved = book.available > 0;
 
-    setBooks((prev) =>
-      prev.map((b) => (b.id === book.id && b.available > 0 ? { ...b, available: b.available - 1 } : b))
-    );
-    setHolds((prev) => [
-      ...prev,
-      {
-        id: uid("hold"),
-        bookId: book.id,
-        bookTitle: book.title,
-        bookAuthor: book.author,
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        requestedAt: Date.now(),
-        reserved,
-      },
-    ]);
+    const hold = {
+      id: uid("hold"), bookId: book.id, bookTitle: book.title, bookAuthor: book.author,
+      userId: user.id, userName: user.name, userEmail: user.email, requestedAt: Date.now(), reserved,
+    };
+    authFetch("/library/holds", { method: "POST", body: JSON.stringify(hold) })
+      .then((response) => response.ok ? response.json() : null)
+      .then(applyLibraryState);
   }
 
   function cancelHold(holdId) {
     const hold = holds.find((h) => h.id === holdId);
     if (!hold) return;
-    setHolds((prev) => prev.filter((h) => h.id !== holdId));
-    // Only give a copy back if this hold had actually taken one — a
-    // waitlist-only hold (book was already out when requested) never
-    // reserved anything, so cancelling it shouldn't inflate the count.
-    if (hold.reserved) {
-      setBooks((prev) => {
-        const nextBooks = prev.map((b) => (b.id === hold.bookId ? { ...b, available: b.available + 1 } : b));
-        handleBookStockChange(nextBooks);
-        return nextBooks;
-      });
-    }
+    authFetch(`/library/holds/${holdId}`, { method: "DELETE" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(applyLibraryState);
   }
 
   function approveHold(holdId) {
     const hold = holds.find((h) => h.id === holdId);
     if (!hold) return;
-    setHolds((prev) => prev.filter((h) => h.id !== holdId));
-
-    const borrowedISO = TODAY.toISOString().slice(0, 10);
-    const dueDate = new Date(TODAY);
-    dueDate.setDate(dueDate.getDate() + 14);
-    const newRecord = {
-      id: uid("rec"),
-      bookId: hold.bookId,
-      title: hold.bookTitle,
-      borrowed: borrowedISO,
-      due: dueDate.toISOString().slice(0, 10),
-      returned: null,
-    };
-
-    setBorrowers((prev) => {
-      const exists = prev.some((b) => b.id === hold.userId);
-      if (exists) {
-        return prev.map((b) =>
-          b.id === hold.userId ? { ...b, records: [newRecord, ...b.records] } : b
-        );
-      }
-      return [
-        ...prev,
-        { id: hold.userId, name: hold.userName, email: hold.userEmail, records: [newRecord] },
-      ];
-    });
+    authFetch(`/library/holds/${holdId}/approve`, { method: "POST" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(applyLibraryState);
     // stock was already reserved when the hold was placed, so no further
     // subtraction here — the copy simply changes from "on hold" to "on loan".
   }
@@ -169,25 +127,36 @@ export default function App({ initialSession = null }) {
   }
 
   function rejectHold(holdId) {
-    cancelHold(holdId); // same effect: release the reserved copy back to the shelf
+    authFetch(`/library/holds/${holdId}/reject`, { method: "POST" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(applyLibraryState);
   }
 
   function returnBook(record) {
-    setBorrowers((prev) =>
-      prev.map((b) => ({
-        ...b,
-        records: b.records.map((r) =>
-          r.id === record.id ? { ...r, returned: TODAY.toISOString().slice(0, 10) } : r
-        ),
-      }))
-    );
-    if (record.bookId != null) {
-      setBooks((prev) => {
-        const nextBooks = prev.map((b) => (b.id === record.bookId ? { ...b, available: b.available + 1 } : b));
-        handleBookStockChange(nextBooks);
-        return nextBooks;
-      });
-    }
+    authFetch(`/library/records/${record.id}/return`, {
+      method: "POST",
+      body: JSON.stringify({ bookId: record.bookId }),
+    }).then((response) => response.ok ? response.json() : null).then(applyLibraryState);
+  }
+
+  function adjustBookAvailability(bookId, delta) {
+    authFetch(`/library/books/${bookId}/availability`, {
+      method: "PATCH",
+      body: JSON.stringify({ delta }),
+    }).then((response) => response.ok ? response.json() : null).then(applyLibraryState);
+  }
+
+  function removeBook(bookId) {
+    authFetch(`/library/books/${bookId}`, { method: "DELETE" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(applyLibraryState);
+  }
+
+  function addBook(book) {
+    authFetch("/library/books", {
+      method: "POST",
+      body: JSON.stringify(book),
+    }).then((response) => response.ok ? response.json() : null).then(applyLibraryState);
   }
 
   if (!booksLoaded && !session) {
@@ -222,7 +191,7 @@ export default function App({ initialSession = null }) {
           borrowers={borrowers}
           holds={holds}
           now={now}
-          onLogout={() => setSession(null)}
+          onLogout={onLogout}
           onBorrow={(book) => requestBorrow(book, session.user)}
           onCancelHold={cancelHold}
           onReturn={returnBook}
@@ -232,10 +201,13 @@ export default function App({ initialSession = null }) {
           currentUser={session.user}
           books={books}
           setBooks={setBooks}
+          onAdjustBook={adjustBookAvailability}
+          onRemoveBook={removeBook}
+          onAddBook={addBook}
           borrowers={borrowers}
           holds={holds}
           now={now}
-          onLogout={() => setSession(null)}
+          onLogout={onLogout}
           onApproveHold={approveHold}
           onRejectHold={rejectHold}
         />

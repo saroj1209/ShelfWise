@@ -5,6 +5,7 @@ import Login from "./Pages/Login";
 import Signup from "./Pages/Signup";
 import ForgotPassword from "./Pages/ForgotPassword";
 import LibraryApp from "./Pages/LibraryApp";
+import { authFetch, getToken, setToken } from "./libraryApi";
 import "./App.css";
 
 /**
@@ -15,7 +16,12 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:3000/users/me", { credentials: "include" })
+    if (!getToken()) {
+      setLoading(false);
+      return;
+    }
+
+    authFetch("/users/me")
       .then((res) => {
         if (res.ok) return res.json();
         throw new Error("Not logged in");
@@ -59,7 +65,7 @@ function App() {
           path="/dashboard"
           element={
             session ? (
-              <LibraryApp initialSession={session} />
+              <LibraryApp initialSession={session} onLogout={() => { setToken(null); setSession(null); }} />
             ) : (
               <Navigate to="/login" replace />
             )
