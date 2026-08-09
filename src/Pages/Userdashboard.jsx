@@ -4,8 +4,7 @@ import {
   Clock3, X, Bell, Hourglass,
 } from "lucide-react";
 import { CatalogNav, DueStamp, EmptyState } from "./LibraryShared";
-import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown, getRecentBorrowRecords } from "./libraryHelpers";
-
+import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown } from "./libraryHelpers";
 /* ---------------------------------------------------------
    USER DASHBOARD (Reader)
 
@@ -142,7 +141,6 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
 
   const current = myRecords.filter((r) => !r.returned);
   const history = myRecords.filter((r) => r.returned);
-  const recent = getRecentBorrowRecords(myRecords, 4);
   const overdueCount = current.filter((r) => recordStatus(r) === "overdue").length;
 
   return (
@@ -293,14 +291,6 @@ export default function UserDashboard({ currentUser, books, borrowers, holds, no
             <div className="record-list">
               {current.map((r) => (
                 <RecordRow key={r.id} record={r} onReturn={() => onReturn(r)} />
-              ))}
-            </div>
-
-            <h3 className="subhead">Recent borrowed</h3>
-            {recent.length === 0 && <EmptyState text="Your recent loans will appear here after approval." />}
-            <div className="record-list">
-              {recent.map((r) => (
-                <RecordRow key={r.id} record={r} onReturn={r.returned ? undefined : () => onReturn(r)} />
               ))}
             </div>
 
