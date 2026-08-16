@@ -21,16 +21,46 @@ import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown
      toast notifies them and their entry flips into "ready to borrow".
 --------------------------------------------------------- */
 
+import { authFetch } from "../libraryApi";
+
 export default function UserDashboard({ currentUser, books, borrowers, holds, now, onLogout, onBorrow, onCancelHold, onReturn }) {
   const [tab, setTab] = useState("browse");
   const [query, setQuery] = useState("");
   const [genre, setGenre] = useState("All");
   const [selectedBook, setSelectedBook] = useState(null);
+  const [userHistory, setUserHistory] = useState([]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      authFetch("/library/history")
+        .then(res => res.ok ? res.json() : [])
+        .then(data => setUserHistory(data))
+        .catch(err => console.error("Failed to load user history", err));
+    }
+  }, [currentUser, borrowers, holds]);
 
   const myRecords = useMemo(() => {
+    const allRecordsMap = new Map();
+    userHistory.forEach(r => {
+      allRecordsMap.set(r.recordId, {
+        id: r.recordId,
+        bookId: r.bookId,
+        title: r.bookTitle,
+        borrowed: r.borrowedAt,
+        due: r.dueDate,
+        returned: r.returnedAt,
+      });
+    });
+
     const me = borrowers.find((b) => b.id === currentUser.id);
-    return me ? me.records : [];
-  }, [borrowers, currentUser]);
+    if (me && me.records) {
+      me.records.forEach(r => {
+        allRecordsMap.set(r.id, r);
+      });
+    }
+
+    return Array.from(allRecordsMap.values()).sort((a, b) => new Date(b.borrowed) - new Date(a.borrowed));
+  }, [borrowers, currentUser, userHistory]);
 
   const myHolds = useMemo(
     () => holds.filter((h) => h.userId === currentUser.id),

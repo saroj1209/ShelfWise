@@ -10,15 +10,26 @@ import { GENRES, TODAY, fmtDate, recordStatus, daysBetween, msLeft, fmtCountdown
    ADMIN DASHBOARD (Librarian)
 --------------------------------------------------------- */
 
-export default function AdminDashboard({ currentUser, books, borrowers, holds, now, onLogout, onApproveHold, onRejectHold, onAdjustBook, onRemoveBook, onAddBook }) {
+export default function AdminDashboard({ currentUser, books, borrowers, adminHistory = [], holds, now, onLogout, onApproveHold, onRejectHold, onAdjustBook, onRemoveBook, onAddBook }) {
   const [tab, setTab] = useState("requests");
   const [filter, setFilter] = useState("all"); // all | overdue
   const [showAdd, setShowAdd] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
 
-  const allRecordsFlat = borrowers.flatMap((b) =>
-    b.records.map((r) => ({ ...r, borrowerName: b.name, borrowerEmail: b.email, status: recordStatus(r) }))
-  );
+  const allRecordsFlat = adminHistory.length > 0
+    ? adminHistory.map((r) => ({
+        id: r.recordId,
+        borrowerName: r.userName,
+        borrowerEmail: r.userEmail,
+        title: r.bookTitle,
+        borrowed: r.borrowedAt,
+        due: r.dueDate,
+        returned: r.returnedAt,
+        status: recordStatus({ returned: r.returnedAt, due: r.dueDate })
+      }))
+    : borrowers.flatMap((b) =>
+        b.records.map((r) => ({ ...r, borrowerName: b.name, borrowerEmail: b.email, status: recordStatus(r) }))
+      );
   const visibleRecords = filter === "overdue" ? allRecordsFlat.filter((r) => r.status === "overdue") : allRecordsFlat;
   const overdueTotal = allRecordsFlat.filter((r) => r.status === "overdue").length;
 

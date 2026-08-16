@@ -6,7 +6,8 @@ import { GlobalStyle, DueStamp } from "./LibraryShared";
 import { TODAY, HOLD_DURATION_MS, uid, msLeft } from "./libraryHelpers";
 import UserDashboard from "./UserDashboard";
 import AdminDashboard from "./AdminDashboard";
-import { authFetch } from "../libraryApi";
+import { authFetch, getToken } from "../libraryApi";
+import { io } from "socket.io-client";
 
 /* ---------------------------------------------------------
    ROOT APP
@@ -19,6 +20,8 @@ export default function App({ initialSession = null, onLogout = () => {} }) {
   const [borrowers, setBorrowers] = useState([]);
   const [holds, setHolds] = useState([]); // pending borrow requests awaiting librarian approval
   const [now, setNow] = useState(Date.now());
+  const [socket, setSocket] = useState(null);
+  const [adminHistory, setAdminHistory] = useState([]);
 
   // tick every 30s so countdowns stay fresh
   useEffect(() => {
@@ -35,25 +38,44 @@ export default function App({ initialSession = null, onLogout = () => {} }) {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    const sync = async () => {
-      try {
-        const response = await authFetch("/library/state");
-        if (!response.ok) throw new Error("Failed to load shared library state");
-        const data = await response.json();
-        if (!cancelled) applyLibraryState(data);
-      } catch {
-        if (!cancelled) setBooksLoaded(true);
-      }
-    };
+    if (!session) {
+      if (socket) socket.disconnect();
+      setSocket(null);
+      return;
+    }
 
-    sync();
-    const interval = setInterval(sync, 1500);
+    const newSocket = io("http://localhost:3000", {
+      auth: { token: getToken() },
+      withCredentials: true,
+      transports: ["websocket"]
+    });
+
+    newSocket.on("library_state_update", (data) => {
+      applyLibraryState(data);
+    });
+
+    setSocket(newSocket);
+
+    // Initial fetch to ensure data is loaded quickly
+    authFetch("/library/state")
+      .then((res) => res.ok ? res.json() : null)
+      .then(applyLibraryState)
+      .catch(() => setBooksLoaded(true));
+
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      newSocket.disconnect();
     };
-  }, []);
+  }, [session]);
+
+  // Fetch full borrow history for admin
+  useEffect(() => {
+    if (session?.role === "librarian") {
+      authFetch("/library/history/all")
+        .then(res => res.ok ? res.json() : [])
+        .then(data => setAdminHistory(data))
+        .catch(err => console.error("Failed to load history", err));
+    }
+  }, [session, holds, borrowers]);
 
   // auto-release any hold that's been sitting for 24h without approval
   useEffect(() => {
@@ -205,6 +227,7 @@ export default function App({ initialSession = null, onLogout = () => {} }) {
           onRemoveBook={removeBook}
           onAddBook={addBook}
           borrowers={borrowers}
+          adminHistory={adminHistory}
           holds={holds}
           now={now}
           onLogout={onLogout}
